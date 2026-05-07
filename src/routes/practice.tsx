@@ -1,6 +1,18 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowLeft, Check, Lightbulb, Loader2, Mic, Play, RotateCcw, Trophy, Volume2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  Check,
+  HelpCircle,
+  Keyboard,
+  Lightbulb,
+  Loader2,
+  Mic,
+  Play,
+  RotateCcw,
+  Trophy,
+  Volume2,
+} from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useGamification } from '../hooks/useGamification'
 import { speakEnglish } from '../services/speechService'
@@ -151,6 +163,9 @@ export function PracticePage() {
         </Link>
         <h1 className="mt-5 text-3xl font-semibold tracking-normal text-slate-950 dark:text-white">{dayLabel}</h1>
         <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{currentTask.theme}</p>
+        <div className="mt-5 rounded-lg bg-emerald-50 p-4 text-sm text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200">
+          Complete a tarefa, use dica quando travar e avance no seu ritmo.
+        </div>
         <div className="mt-6">
           <div className="flex items-center justify-between text-sm font-medium text-slate-600 dark:text-slate-300">
             <span>
@@ -167,7 +182,7 @@ export function PracticePage() {
         </div>
       </aside>
 
-      <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
+      <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
         <AnimatePresence mode="wait">
           <motion.div
             key={currentTask.id}
@@ -210,20 +225,20 @@ function ListeningTask({ task, busy, onSuccess }: TaskProps) {
   }
 
   return (
-    <TaskFrame label="Listening" prompt={task.prompt} feedback={feedback}>
-      <button
-        type="button"
+    <TaskFrame label="Escuta" helper="Ouça primeiro. Depois digite ou responda falando." prompt={task.prompt} feedback={feedback}>
+      <PrimaryListenButton
+        label="Ouvir frase"
         onClick={() => {
           setAudioError(null)
           void speakEnglish(task.content, { onError: setAudioError })
         }}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-4 font-semibold text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200 sm:w-auto"
-      >
-        <Volume2 className="size-5" aria-hidden="true" />
-        Ouvir
-      </button>
+      />
       {audioError ? <AudioError message={audioError} /> : null}
       <HintPanel task={task} hintUsed={hintUsed} onUseHint={() => setHintUsed(true)} />
+      <div className="mt-5 flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
+        <Keyboard className="size-4" aria-hidden="true" />
+        Sua resposta
+      </div>
       <input
         value={answer}
         onChange={(event) => setAnswer(event.target.value)}
@@ -239,7 +254,7 @@ function ListeningTask({ task, busy, onSuccess }: TaskProps) {
           if (isCorrect) onSuccess(10)
         }}
       />
-      <PrimaryAction busy={busy} onClick={checkAnswer} />
+      <ActionBar busy={busy} canCheck={answer.trim().length > 0} onCheck={checkAnswer} />
     </TaskFrame>
   )
 }
@@ -280,29 +295,26 @@ function PronunciationTask({ task, busy, onSuccess }: TaskProps) {
   }
 
   return (
-    <TaskFrame label="Pronunciation" prompt={task.prompt} feedback={feedback}>
+    <TaskFrame label="Pronúncia" helper="Ouça o modelo e grave sua voz quando estiver pronto." prompt={task.prompt} feedback={feedback}>
       <HintPanel task={task} hintUsed={hintUsed} onUseHint={() => setHintUsed(true)} />
       <div className="rounded-lg bg-slate-50 p-5 text-2xl font-semibold leading-snug text-slate-950 dark:bg-slate-950 dark:text-white">
         {task.expectedAnswer}
       </div>
-      <button
-        type="button"
+      <PrimaryListenButton
+        label="Ouvir modelo"
+        variant="secondary"
         onClick={() => {
           setAudioError(null)
           void speakEnglish(task.expectedAnswer, { onError: setAudioError })
         }}
-        className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-4 font-semibold text-slate-700 hover:border-slate-950 dark:border-slate-700 dark:text-slate-200 dark:hover:border-white sm:w-auto"
-      >
-        <Volume2 className="size-5" aria-hidden="true" />
-        Ouvir modelo
-      </button>
+      />
       {audioError ? <AudioError message={audioError} /> : null}
       {isSupported ? (
         <button
           type="button"
           onClick={startRecording}
           disabled={listening || busy}
-          className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-4 font-semibold text-white hover:bg-slate-800 disabled:opacity-60 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200 sm:w-auto"
+          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-4 font-semibold text-white hover:bg-emerald-500 disabled:opacity-60 sm:w-auto"
         >
           {listening ? <Loader2 className="size-5 animate-spin" /> : <Mic className="size-5" />}
           {listening ? 'Ouvindo...' : 'Gravar audio'}
@@ -361,9 +373,13 @@ function BuildingTask({ task, busy, onSuccess }: TaskProps) {
   }
 
   return (
-    <TaskFrame label="Building" prompt={task.content} feedback={feedback}>
+    <TaskFrame label="Montagem" helper="Toque nas palavras na ordem correta para formar a frase." prompt={task.content} feedback={feedback}>
       <p className="text-sm font-medium text-slate-600 dark:text-slate-300">{task.prompt}</p>
       <HintPanel task={task} hintUsed={hintUsed} onUseHint={() => setHintUsed(true)} />
+      <div className="mt-5 flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Frase montada</p>
+        <span className="text-xs font-medium text-slate-500">toque para remover</span>
+      </div>
       <div className="mt-4 min-h-24 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-950">
         <div className="flex flex-wrap gap-2">
           {selected.map((item) => (
@@ -378,6 +394,7 @@ function BuildingTask({ task, busy, onSuccess }: TaskProps) {
           ))}
         </div>
       </div>
+      <p className="mt-5 text-sm font-semibold text-slate-700 dark:text-slate-200">Palavras disponíveis</p>
       <div className="mt-5 flex flex-wrap gap-2">
         {available.map((item) => {
           const shouldHighlight = hintUsed && normalizeAnswer(item.word) === firstExpectedWord
@@ -396,17 +413,15 @@ function BuildingTask({ task, busy, onSuccess }: TaskProps) {
         })}
       </div>
       <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-        <button
-          type="button"
+        <PrimaryListenButton
+          label="Ouvir frase"
+          compact
+          variant="secondary"
           onClick={() => {
             setAudioError(null)
             void speakEnglish(task.expectedAnswer, { onError: setAudioError })
           }}
-          className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 hover:border-slate-950 dark:border-slate-700 dark:text-slate-200 dark:hover:border-white"
-        >
-          <Volume2 className="size-4" aria-hidden="true" />
-          Ouvir frase
-        </button>
+        />
         <SpeechAnswerButton
           compact
           onTranscript={(transcript) => {
@@ -418,17 +433,7 @@ function BuildingTask({ task, busy, onSuccess }: TaskProps) {
         />
       </div>
       {audioError ? <AudioError message={audioError} /> : null}
-      <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-        <button
-          type="button"
-          onClick={reset}
-          className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 hover:border-slate-950 dark:border-slate-700 dark:text-slate-200 dark:hover:border-white"
-        >
-          <RotateCcw className="size-4" aria-hidden="true" />
-          Refazer
-        </button>
-        <PrimaryAction busy={busy} onClick={checkAnswer} disabled={selected.length === 0} />
-      </div>
+      <ActionBar busy={busy} canCheck={selected.length > 0} onCheck={checkAnswer} onReset={reset} />
     </TaskFrame>
   )
 }
@@ -441,21 +446,32 @@ interface TaskProps {
 
 function TaskFrame({
   label,
+  helper,
   prompt,
   feedback,
   children,
 }: {
   label: string
+  helper: string
   prompt: string
   feedback: Feedback
   children: React.ReactNode
 }) {
   return (
     <div>
-      <span className="inline-flex rounded-md bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-950 dark:text-slate-300">
-        {label}
-      </span>
-      <h2 className="mt-4 text-2xl font-semibold tracking-normal text-slate-950 dark:text-white sm:text-3xl">{prompt}</h2>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <span className="inline-flex rounded-md bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-950 dark:text-slate-300">
+            {label}
+          </span>
+          <h2 className="mt-4 text-2xl font-semibold tracking-normal text-slate-950 dark:text-white sm:text-3xl">{prompt}</h2>
+          <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{helper}</p>
+          <MiniTip />
+        </div>
+        <span className="inline-flex shrink-0 items-center justify-center rounded-lg bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200">
+          +10 XP
+        </span>
+      </div>
       <div className="mt-6">{children}</div>
       <FeedbackMessage feedback={feedback} />
     </div>
@@ -484,7 +500,7 @@ function HintPanel({
         className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 disabled:opacity-70 dark:text-slate-200"
       >
         <Lightbulb className="size-4 text-amber-500" aria-hidden="true" />
-        {hintUsed ? 'Dica aberta' : 'Ver dica da resposta'}
+        {hintUsed ? 'Dica aberta' : 'Estou travado, mostrar dica'}
       </button>
 
       {hintUsed ? (
@@ -582,25 +598,73 @@ function SpeechAnswerButton({
   )
 }
 
-function PrimaryAction({
-  busy,
+function PrimaryListenButton({
+  label,
   onClick,
-  disabled,
+  variant = 'primary',
+  compact,
 }: {
-  busy: boolean
+  label: string
   onClick: () => void
-  disabled?: boolean
+  variant?: 'primary' | 'secondary'
+  compact?: boolean
 }) {
+  const className =
+    variant === 'primary'
+      ? 'bg-slate-950 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200'
+      : 'border border-slate-300 text-slate-700 hover:border-slate-950 dark:border-slate-700 dark:text-slate-200 dark:hover:border-white'
+
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={busy || disabled}
-      className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-4 font-semibold text-white hover:bg-emerald-500 disabled:opacity-60 sm:w-auto"
+      className={[
+        'inline-flex items-center justify-center gap-2 rounded-lg px-4 font-semibold',
+        compact ? 'py-3 text-sm' : 'w-full py-4 sm:w-auto',
+        className,
+      ].join(' ')}
     >
-      {busy ? <Loader2 className="size-5 animate-spin" /> : <Check className="size-5" />}
-      Conferir
+      <Volume2 className={compact ? 'size-4' : 'size-5'} aria-hidden="true" />
+      {label}
     </button>
+  )
+}
+
+function ActionBar({
+  busy,
+  canCheck,
+  onCheck,
+  onReset,
+}: {
+  busy: boolean
+  canCheck: boolean
+  onCheck: () => void
+  onReset?: () => void
+}) {
+  return (
+    <div className="sticky bottom-0 -mx-4 mt-6 border-t border-slate-200 bg-white/95 p-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0 sm:dark:bg-transparent">
+      <div className="flex flex-col-reverse gap-3 sm:flex-row">
+        {onReset ? (
+          <button
+            type="button"
+            onClick={onReset}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 hover:border-slate-950 dark:border-slate-700 dark:text-slate-200 dark:hover:border-white"
+          >
+            <RotateCcw className="size-4" aria-hidden="true" />
+            Refazer
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={onCheck}
+          disabled={busy || !canCheck}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-4 font-semibold text-white hover:bg-emerald-500 disabled:opacity-60 sm:w-auto sm:px-6"
+        >
+          {busy ? <Loader2 className="size-5 animate-spin" /> : <Check className="size-5" />}
+          Conferir e avançar
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -667,6 +731,15 @@ function PracticeShell({ status, children }: { status: string; children?: React.
         {children}
       </div>
     </section>
+  )
+}
+
+function MiniTip() {
+  return (
+    <div className="mt-4 inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600 dark:bg-slate-950 dark:text-slate-300">
+      <HelpCircle className="size-4" aria-hidden="true" />
+      Use os botões de áudio e dica sempre que precisar.
+    </div>
   )
 }
 
