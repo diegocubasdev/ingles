@@ -1,4 +1,12 @@
-import { browserLocalPersistence, onAuthStateChanged, setPersistence, signInAnonymously } from 'firebase/auth'
+import {
+  GoogleAuthProvider,
+  browserLocalPersistence,
+  linkWithPopup,
+  onAuthStateChanged,
+  setPersistence,
+  signInAnonymously,
+  signInWithPopup,
+} from 'firebase/auth'
 import {
   doc,
   getDoc,
@@ -46,14 +54,21 @@ export function waitForAuthUser() {
 
 export async function getOrCreateUser(): Promise<User> {
   const firebaseUser = await waitForAuthUser()
+  const displayName = firebaseUser.displayName ?? undefined
   const ref = doc(db, 'users', firebaseUser.uid)
   const snapshot = await getDoc(ref)
 
   if (snapshot.exists()) {
-    return snapshot.data() as User
+    const user = snapshot.data() as User
+    if (displayName && user.name !== displayName) {
+      await setDoc(ref, { name: displayName, updatedAt: serverTimestamp() }, { merge: true })
+      return { ...user, name: displayName }
+    }
+
+    return user
   }
 
-  const user = defaultUser(firebaseUser.uid)
+  const user = { ...defaultUser(firebaseUser.uid), name: displayName ?? 'Student' }
   await setDoc(ref, {
     ...user,
     createdAt: serverTimestamp(),
@@ -61,6 +76,29 @@ export async function getOrCreateUser(): Promise<User> {
   })
 
   return user
+}
+
+export async function signInWithGoogle(): Promise<User> {
+  await setPersistence(auth, browserLocalPersistence)
+
+  const provider = new GoogleAuthProvider()
+  provider.setCustomParameters({ prompt: 'select_account' })
+
+  try {
+    if (auth.currentUser?.isAnonymous) {
+      await linkWithPopup(auth.currentUser, provider)
+    } else {
+      await signInWithPopup(auth, provider)
+    }
+  } catch {
+    await signInWithPopup(auth, provider)
+  }
+
+  return getOrCreateUser()
+}
+
+export function getAuthUser() {
+  return auth.currentUser
 }
 
 export async function getUser(uid: string): Promise<User | null> {

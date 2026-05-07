@@ -7,21 +7,26 @@ import {
   CalendarDays,
   CheckCircle2,
   Flame,
+  LogIn,
   Loader2,
   LockKeyhole,
   Play,
+  Plus,
   Sparkles,
+  Trash2,
+  UserCheck,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import {
   disableDailyStudyNotifications,
   enableDailyStudyNotifications,
   getNotificationSettings,
+  updateDailyStudyNotificationTimes,
 } from '../services/notificationService'
 import { speakEnglish } from '../services/speechService'
 import { generateIntensivePlan } from '../services/taskGenerator'
 import { getCurrentStudyPlan } from '../services/studyPlanService'
-import { getOrCreateUser, timestampToDate } from '../services/userService'
+import { getAuthUser, getOrCreateUser, signInWithGoogle, timestampToDate } from '../services/userService'
 import { PLAN_DAYS, type PlanType, type StudyPlan, type User } from '../types'
 
 const planOptions: Array<{ id: PlanType; label: string; description: string }> = [
@@ -114,6 +119,7 @@ export function DashboardPage() {
           </p>
         </div>
 
+        <AccountCard onAccountChanged={loadDashboard} />
         <NotificationCard />
         <IdiomOfTheDay />
       </aside>
@@ -132,6 +138,57 @@ export function DashboardPage() {
         )}
       </div>
     </section>
+  )
+}
+
+function AccountCard({ onAccountChanged }: { onAccountChanged: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const authUser = getAuthUser()
+  const isGoogleUser = Boolean(authUser?.providerData.some((provider) => provider.providerId === 'google.com'))
+
+  async function connectGoogle() {
+    setBusy(true)
+    setError(null)
+
+    try {
+      await signInWithGoogle()
+      await onAccountChanged()
+    } catch (caughtError) {
+      setError(errorMessage(caughtError))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex items-center gap-3">
+        {isGoogleUser ? (
+          <UserCheck className="size-5 text-emerald-600" aria-hidden="true" />
+        ) : (
+          <LogIn className="size-5 text-slate-500" aria-hidden="true" />
+        )}
+        <h2 className="font-semibold text-slate-950 dark:text-white">Conta</h2>
+      </div>
+      <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
+        {isGoogleUser
+          ? `Conectado com Google${authUser?.email ? `: ${authUser.email}` : '.'}`
+          : 'Conecte com Google para manter seu progresso reservado a sua conta.'}
+      </p>
+      {!isGoogleUser ? (
+        <button
+          type="button"
+          onClick={() => void connectGoogle()}
+          disabled={busy}
+          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
+        >
+          {busy ? <Loader2 className="size-4 animate-spin" /> : <LogIn className="size-4" />}
+          Entrar com Google
+        </button>
+      ) : null}
+      {error ? <p className="mt-3 text-xs leading-5 text-red-700">{error}</p> : null}
+    </div>
   )
 }
 
@@ -192,9 +249,10 @@ function IdiomOfTheDay() {
 
 function NotificationCard() {
   const [settings, setSettings] = useState(getNotificationSettings)
+  const [draftTime, setDraftTime] = useState('09:00')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const hoursLabel = settings.hours.map((hour) => `${String(hour).padStart(2, '0')}:00`).join(', ')
+  const timesLabel = settings.times.join(', ')
 
   async function enable() {
     setBusy(true)
@@ -216,6 +274,16 @@ function NotificationCard() {
     setError(null)
   }
 
+  function addTime() {
+    const times = updateDailyStudyNotificationTimes([...settings.times, draftTime])
+    setSettings({ ...getNotificationSettings(), times })
+  }
+
+  function removeTime(time: string) {
+    const times = updateDailyStudyNotificationTimes(settings.times.filter((currentTime) => currentTime !== time))
+    setSettings({ ...getNotificationSettings(), times })
+  }
+
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div className="flex items-center gap-3">
@@ -227,8 +295,43 @@ function NotificationCard() {
         <h2 className="font-semibold text-slate-950 dark:text-white">Lembretes PWA</h2>
       </div>
       <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
-        Notificacoes locais todos os dias as {hoursLabel}.
+        Notificacoes locais todos os dias as {timesLabel}.
       </p>
+      <div className="mt-4 space-y-2">
+        {settings.times.map((time) => (
+          <div
+            key={time}
+            className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950"
+          >
+            <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{time}</span>
+            <button
+              type="button"
+              onClick={() => removeTime(time)}
+              className="grid size-8 place-items-center rounded-md text-slate-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-500/10 dark:hover:text-red-300"
+              aria-label={`Remover lembrete das ${time}`}
+              title="Remover horario"
+            >
+              <Trash2 className="size-4" aria-hidden="true" />
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 flex gap-2">
+        <input
+          type="time"
+          value={draftTime}
+          onChange={(event) => setDraftTime(event.target.value)}
+          className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-slate-950 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-white"
+        />
+        <button
+          type="button"
+          onClick={addTime}
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-950 dark:border-slate-700 dark:text-slate-200 dark:hover:border-white"
+        >
+          <Plus className="size-4" aria-hidden="true" />
+          Adicionar
+        </button>
+      </div>
       <div className="mt-4 flex flex-col gap-2 sm:flex-row lg:flex-col">
         {settings.enabled ? (
           <button

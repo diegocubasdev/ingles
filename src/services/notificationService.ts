@@ -1,5 +1,6 @@
-const REMINDER_HOURS = [12, 20, 22]
+const DEFAULT_REMINDER_TIMES = ['12:00', '20:00', '22:00']
 const STORAGE_KEY = 'intensive-english-notifications-enabled'
+const TIMES_STORAGE_KEY = 'intensive-english-notification-times'
 
 let scheduledTimeouts: number[] = []
 
@@ -7,7 +8,7 @@ export function getNotificationSettings() {
   return {
     enabled: localStorage.getItem(STORAGE_KEY) === 'true',
     permission: typeof Notification === 'undefined' ? 'unsupported' : Notification.permission,
-    hours: REMINDER_HOURS,
+    times: getReminderTimes(),
   }
 }
 
@@ -33,6 +34,17 @@ export function disableDailyStudyNotifications() {
   scheduledTimeouts = []
 }
 
+export function updateDailyStudyNotificationTimes(times: string[]) {
+  const normalizedTimes = normalizeTimes(times)
+  localStorage.setItem(TIMES_STORAGE_KEY, JSON.stringify(normalizedTimes))
+
+  if (localStorage.getItem(STORAGE_KEY) === 'true') {
+    scheduleDailyStudyNotifications()
+  }
+
+  return normalizedTimes
+}
+
 export function startNotificationSchedulerIfEnabled() {
   if (localStorage.getItem(STORAGE_KEY) === 'true') {
     scheduleDailyStudyNotifications()
@@ -41,17 +53,17 @@ export function startNotificationSchedulerIfEnabled() {
 
 function scheduleDailyStudyNotifications() {
   scheduledTimeouts.forEach((timeoutId) => window.clearTimeout(timeoutId))
-  scheduledTimeouts = REMINDER_HOURS.map((hour) => scheduleNextReminder(hour))
+  scheduledTimeouts = getReminderTimes().map((time) => scheduleNextReminder(time))
 }
 
-function scheduleNextReminder(hour: number) {
-  const delay = getDelayUntilHour(hour)
+function scheduleNextReminder(time: string) {
+  const delay = getDelayUntilTime(time)
 
   const timeoutId = window.setTimeout(() => {
-    void showStudyNotification(hour)
+    void showStudyNotification(time)
 
     if (localStorage.getItem(STORAGE_KEY) === 'true') {
-      const nextTimeout = scheduleNextReminder(hour)
+      const nextTimeout = scheduleNextReminder(time)
       scheduledTimeouts = scheduledTimeouts.filter((currentTimeoutId) => currentTimeoutId !== timeoutId)
       scheduledTimeouts.push(nextTimeout)
     }
@@ -60,10 +72,11 @@ function scheduleNextReminder(hour: number) {
   return timeoutId
 }
 
-function getDelayUntilHour(hour: number) {
+function getDelayUntilTime(time: string) {
   const now = new Date()
   const next = new Date(now)
-  next.setHours(hour, 0, 0, 0)
+  const [hours, minutes] = time.split(':').map(Number)
+  next.setHours(hours, minutes, 0, 0)
 
   if (next <= now) {
     next.setDate(next.getDate() + 1)
@@ -72,14 +85,14 @@ function getDelayUntilHour(hour: number) {
   return next.getTime() - now.getTime()
 }
 
-async function showStudyNotification(hour: number) {
+async function showStudyNotification(time: string) {
   const title = 'Hora do treino de ingles'
-  const body = `Seu lembrete das ${String(hour).padStart(2, '0')}:00 chegou. Continue as tarefas do dia.`
+  const body = `Seu lembrete das ${time} chegou. Continue as tarefas do dia.`
   const options: NotificationOptions = {
     body,
     icon: '/favicon.svg',
     badge: '/favicon.svg',
-    tag: `english-study-${hour}`,
+    tag: `english-study-${time}`,
     requireInteraction: false,
   }
 
@@ -90,4 +103,24 @@ async function showStudyNotification(hour: number) {
   }
 
   new Notification(title, options)
+}
+
+function getReminderTimes() {
+  const rawTimes = localStorage.getItem(TIMES_STORAGE_KEY)
+  if (!rawTimes) return DEFAULT_REMINDER_TIMES
+
+  try {
+    const parsedTimes = JSON.parse(rawTimes) as unknown
+    return Array.isArray(parsedTimes) ? normalizeTimes(parsedTimes.filter((time) => typeof time === 'string')) : DEFAULT_REMINDER_TIMES
+  } catch {
+    return DEFAULT_REMINDER_TIMES
+  }
+}
+
+function normalizeTimes(times: string[]) {
+  const validTimes = times
+    .filter((time) => /^([01]\d|2[0-3]):[0-5]\d$/.test(time))
+    .sort((a, b) => a.localeCompare(b))
+
+  return Array.from(new Set(validTimes.length > 0 ? validTimes : DEFAULT_REMINDER_TIMES))
 }
