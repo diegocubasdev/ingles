@@ -55,6 +55,23 @@ function isPwaStandalone() {
   return Boolean(isStandaloneDisplay || isIosStandalone);
 }
 
+function shouldFallbackToRedirect(error: unknown) {
+  const code =
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof (error as { code?: unknown }).code === "string"
+      ? (error as { code: string }).code
+      : "";
+
+  return [
+    "auth/popup-blocked",
+    "auth/popup-closed-by-user",
+    "auth/cancelled-popup-request",
+    "auth/operation-not-supported-in-this-environment",
+  ].includes(code);
+}
+
 export function waitForAuthUser() {
   return new Promise<NonNullable<typeof auth.currentUser> | null>(
     (resolve, reject) => {
@@ -121,25 +138,47 @@ export async function signInWithGoogle(): Promise<User | void> {
   await setPersistence(auth, browserLocalPersistence);
 
   const provider = createGoogleProvider();
-  const shouldUseRedirect = isPwaStandalone();
+  const useRedirectDirectly = isPwaStandalone();
 
   if (auth.currentUser?.isAnonymous) {
-    if (shouldUseRedirect) {
+    if (useRedirectDirectly) {
       await linkWithRedirect(auth.currentUser, provider);
       return;
     }
 
-    await linkWithPopup(auth.currentUser, provider);
-    return getOrCreateUser();
+    try {
+      await linkWithPopup(auth.currentUser, provider);
+      return getOrCreateUser();
+    } catch (error) {
+      console.warn("Popup link failed:", error);
+
+      if (shouldFallbackToRedirect(error)) {
+        await linkWithRedirect(auth.currentUser, provider);
+        return;
+      }
+
+      throw error;
+    }
   }
 
-  if (shouldUseRedirect) {
+  if (useRedirectDirectly) {
     await signInWithRedirect(auth, provider);
     return;
   }
 
-  await signInWithPopup(auth, provider);
-  return getOrCreateUser();
+  try {
+    await signInWithPopup(auth, provider);
+    return getOrCreateUser();
+  } catch (error) {
+    console.warn("Popup sign-in failed:", error);
+
+    if (shouldFallbackToRedirect(error)) {
+      await signInWithRedirect(auth, provider);
+      return;
+    }
+
+    throw error;
+  }
 }
 
 export function getAuthUser() {
