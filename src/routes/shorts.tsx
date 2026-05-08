@@ -1,93 +1,127 @@
 import { Link } from "@tanstack/react-router";
-import { motion } from "framer-motion";
-import { ArrowLeft, CheckCircle2, Mic, Play, Timer } from "lucide-react";
+import { ArrowLeft, Captions, ExternalLink, Play } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ShareableAchievement } from "../components/ShareableAchievement";
-import { useAdvancedSpeech } from "../hooks/useAdvancedSpeech";
-import { normalizeAnswer } from "../services/textUtils";
 
-interface ShortVideo {
-  id: string;
+interface BaseShort {
   title: string;
+  category: string;
   caption: string;
-  keywords: string[];
 }
+
+interface YoutubeShort extends BaseShort {
+  source: "youtube";
+  id: string;
+}
+
+interface TikTokShort extends BaseShort {
+  source: "tiktok";
+  url: string;
+}
+
+type ShortVideo = YoutubeShort | TikTokShort;
 
 interface YoutubeMessage {
   event?: string;
-  func?: string;
 }
 
 const shortsPool: ShortVideo[] = [
   {
-    id: "Mc6pS-5ju5s",
-    title: "React interview challenge",
-    caption:
-      "The speaker is talking about a React concept you may hear in technical interviews.",
-    keywords: ["react", "state", "effect", "component"],
+    source: "youtube",
+    id: "DO6kO6qzU-Y",
+    title: "Hidden London",
+    category: "London",
+    caption: "A short look at a unique attraction in London.",
   },
   {
-    id: "yhUDK_tLdDA",
-    title: "JavaScript interview question",
-    caption:
-      "This short presents a common JavaScript interview-style question.",
-    keywords: ["javascript", "string", "array", "function"],
+    source: "youtube",
+    id: "oCfidHgQbfw",
+    title: "New York subway moment",
+    category: "New York",
+    caption: "Listen to natural English around New York city life.",
   },
   {
-    id: "w3dUOEqd55c",
-    title: "HTML CSS JS mini project",
-    caption:
-      "The video shows a small UI project built with HTML, CSS, and JavaScript.",
-    keywords: ["html", "css", "javascript", "ui"],
+    source: "youtube",
+    id: "L9NDgAbf5Zc",
+    title: "New York news clip",
+    category: "News",
+    caption: "A short news-style clip about severe weather in New York.",
   },
   {
-    id: "MNUoe5ZgvT0",
-    title: "Navigation animation",
-    caption:
-      "The focus here is a navigation animation created for a web interface.",
-    keywords: ["navigation", "animation", "css", "javascript"],
+    source: "youtube",
+    id: "gcnnITxws2g",
+    title: "NYC weather update",
+    category: "News",
+    caption: "Practice listening to emergency and city-update vocabulary.",
   },
   {
-    id: "8aGhZQkoFbQ",
-    title: "JavaScript event loop",
-    caption:
-      "This short explains the JavaScript event loop and asynchronous behavior.",
-    keywords: ["javascript", "event", "loop", "async"],
+    source: "youtube",
+    id: "wGn4ECfEPxc",
+    title: "Los Angeles hotel story",
+    category: "Los Angeles",
+    caption: "A short clip connected to travel and hospitality in Los Angeles.",
   },
   {
-    id: "w7ejDZ8SWv8",
-    title: "React crash course",
-    caption:
-      "The video introduces React basics such as components, props, and state.",
-    keywords: ["react", "component", "props", "state"],
+    source: "youtube",
+    id: "lvP02fw1klk",
+    title: "New York adventure",
+    category: "New York",
+    caption: "A short travel story from New York with casual spoken English.",
   },
   {
-    id: "hdI2bqOjy3c",
-    title: "JavaScript fundamentals",
-    caption:
-      "This lesson covers JavaScript fundamentals used in everyday frontend work.",
-    keywords: ["javascript", "dom", "function", "event"],
+    source: "youtube",
+    id: "hTa0Ra-MGeU",
+    title: "World tour note",
+    category: "Travel",
+    caption: "Listen for travel, culture, and personal-update expressions.",
   },
   {
-    id: "fBNz5xF-Kx4",
-    title: "Node.js crash course",
-    caption:
-      "The speaker is introducing Node.js as a runtime for backend development.",
-    keywords: ["node", "server", "api", "request"],
+    source: "youtube",
+    id: "vtQkut35JEI",
+    title: "Relaxing travel spot",
+    category: "Europe / Travel",
+    caption: "A calmer short for listening to descriptive travel language.",
   },
   {
-    id: "Oe421EPjeBE",
-    title: "Node and Express API",
-    caption:
-      "This video is about building API routes with Node.js and Express.",
-    keywords: ["node", "express", "api", "route"],
+    source: "youtube",
+    id: "OLIJg1U1Lzo",
+    title: "Gaming news short",
+    category: "Games",
+    caption: "A short gaming update for listening to game-news vocabulary.",
   },
   {
-    id: "1WmNXEVia8I",
-    title: "TypeScript essentials",
-    caption:
-      "The video highlights TypeScript features such as types and interfaces.",
-    keywords: ["typescript", "type", "interface", "function"],
+    source: "youtube",
+    id: "wQH39y2M0Ts",
+    title: "Los Angeles event",
+    category: "Los Angeles",
+    caption: "A short event clip connected to Los Angeles entertainment.",
+  },
+  {
+    source: "youtube",
+    id: "hcukS-b-3tY",
+    title: "Short travel blog",
+    category: "Travel",
+    caption: "A short travel-blog style clip with simple descriptive English.",
+  },
+  {
+    source: "youtube",
+    id: "RIslc5SGHOs",
+    title: "Book and news update",
+    category: "News / Updates",
+    caption: "Listen for announcement language and update-style English.",
+  },
+  {
+    source: "tiktok",
+    url: "https://www.tiktok.com/channel/travel?lang=en",
+    title: "TikTok Travel",
+    category: "TikTok",
+    caption: "Open TikTok travel shorts in English when you want a fresh feed.",
+  },
+  {
+    source: "tiktok",
+    url: "https://www.tiktok.com/channel/traveling?lang=en",
+    title: "TikTok Traveling",
+    category: "TikTok",
+    caption: "Open a TikTok feed with short travel videos in English.",
   },
 ];
 
@@ -125,7 +159,7 @@ export function ShortsPage() {
 
       {feed.map((video, index) => (
         <ShortCard
-          key={`${video.id}-${index}`}
+          key={`${video.source}-${video.title}-${index}`}
           video={video}
           soundUnlocked={soundUnlocked}
           onUnlockSound={() => setSoundUnlocked(true)}
@@ -144,33 +178,40 @@ function ShortCard({
   soundUnlocked: boolean;
   onUnlockSound: () => void;
 }) {
-  const speech = useAdvancedSpeech();
+  if (video.source === "tiktok") {
+    return <TikTokFallbackCard video={video} />;
+  }
+
+  return (
+    <YoutubeShortCard
+      video={video}
+      soundUnlocked={soundUnlocked}
+      onUnlockSound={onUnlockSound}
+    />
+  );
+}
+
+function YoutubeShortCard({
+  video,
+  soundUnlocked,
+  onUnlockSound,
+}: {
+  video: YoutubeShort;
+  soundUnlocked: boolean;
+  onUnlockSound: () => void;
+}) {
   const cardRef = useRef<HTMLElement | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const active = useElementOnScreen(cardRef, 0.98);
-  const [seconds, setSeconds] = useState(15);
-  const [recording, setRecording] = useState(false);
-  const [score, setScore] = useState<number | null>(null);
   const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(soundUnlocked);
 
   useEffect(() => {
-    if (!recording || seconds <= 0) return;
-    const id = window.setTimeout(() => setSeconds((value) => value - 1), 1000);
-    return () => window.clearTimeout(id);
-  }, [recording, seconds]);
-
-  useEffect(() => {
     if (!ready) return;
-    if (active && playing) {
-      sendYoutubeCommand(iframeRef.current, "playVideo");
-    } else {
-      sendYoutubeCommand(iframeRef.current, "pauseVideo");
-      window.setTimeout(() => {
-        setRecording(false);
-        setSeconds(15);
-      }, 0);
-    }
+    sendYoutubeCommand(
+      iframeRef.current,
+      active && playing ? "playVideo" : "pauseVideo",
+    );
   }, [active, playing, ready]);
 
   useEffect(() => {
@@ -189,20 +230,6 @@ function ShortCard({
     return () => window.removeEventListener("message", handleMessage);
   }, []);
 
-  async function summarize() {
-    sendYoutubeCommand(iframeRef.current, "pauseVideo");
-    setSeconds(15);
-    setRecording(true);
-    const transcript = await speech.startRecording(15);
-    setRecording(false);
-    const spoken = normalizeAnswer(transcript);
-    const hits = video.keywords.filter((keyword) =>
-      spoken.includes(normalizeAnswer(keyword)),
-    ).length;
-    setScore(hits);
-    navigator.vibrate?.(hits >= 2 ? [50] : [30, 40, 30]);
-  }
-
   return (
     <article
       ref={cardRef}
@@ -211,7 +238,7 @@ function ShortCard({
       <iframe
         ref={iframeRef}
         title={video.title}
-        src={buildEmbedUrl(video.id)}
+        src={buildYoutubeShortEmbedUrl(video.id)}
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
         allowFullScreen
         className="h-full w-full"
@@ -233,10 +260,44 @@ function ShortCard({
         </button>
       ) : null}
 
+      <CaptionOverlay video={video} />
+    </article>
+  );
+}
+
+function TikTokFallbackCard({ video }: { video: TikTokShort }) {
+  return (
+    <article className="relative grid h-[calc(100svh-4rem-6rem)] snap-start place-items-center overflow-hidden bg-slate-950 px-5 text-center md:h-[calc(100svh-73px)]">
+      <div className="max-w-sm rounded-lg border border-white/10 bg-white/10 p-6 backdrop-blur-md">
+        <p className="font-mono text-xs uppercase tracking-wide text-pink-200">
+          TikTok
+        </p>
+        <h2 className="mt-3 text-3xl font-bold">{video.title}</h2>
+        <p className="mt-3 text-sm leading-6 text-slate-300">
+          {video.caption}
+        </p>
+        <a
+          href={video.url}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-5 inline-flex items-center justify-center gap-2 rounded-lg bg-pink-400 px-4 py-3 font-bold text-slate-950"
+        >
+          Abrir TikTok
+          <ExternalLink className="size-4" />
+        </a>
+      </div>
+    </article>
+  );
+}
+
+function CaptionOverlay({ video }: { video: BaseShort }) {
+  return (
+    <>
       <div className="pointer-events-none absolute inset-x-0 top-4 z-10 px-4">
         <div className="mx-auto max-w-xl rounded-lg bg-black/70 p-4 text-center shadow-2xl backdrop-blur-md">
-          <p className="font-mono text-xs uppercase tracking-wide text-cyan-200">
-            English caption
+          <p className="inline-flex items-center justify-center gap-2 font-mono text-xs uppercase tracking-wide text-cyan-200">
+            <Captions className="size-4" />
+            English listening
           </p>
           <p className="mt-2 text-lg font-semibold leading-snug text-white">
             {video.caption}
@@ -246,52 +307,11 @@ function ShortCard({
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950 via-slate-950/65 to-transparent p-5 pt-24">
         <p className="font-mono text-xs uppercase tracking-wide text-cyan-200">
-          Tech Short
+          {video.category}
         </p>
         <h2 className="mt-2 text-3xl font-semibold">{video.title}</h2>
-        <p className="mt-2 text-sm text-slate-300">
-          Keywords: {video.keywords.join(", ")}
-        </p>
       </div>
-
-      <div className="pointer-events-auto absolute inset-x-4 bottom-6 z-20 mx-auto max-w-sm rounded-lg border border-white/10 bg-black/50 p-4 backdrop-blur-md">
-        <div className="flex items-center justify-between gap-3">
-          <span className="inline-flex items-center gap-2 font-mono text-sm text-slate-200">
-            <Timer className="size-4" />
-            Speaking opcional: {seconds}s
-          </span>
-          {score !== null ? (
-            <span className="inline-flex items-center gap-1 text-sm text-emerald-200">
-              <CheckCircle2 className="size-4" />
-              {score}/{video.keywords.length}
-            </span>
-          ) : null}
-        </div>
-        <motion.button
-          type="button"
-          whileTap={{ scale: 0.95 }}
-          animate={speech.isRecording ? { scale: [1, 1.05, 1] } : { scale: 1 }}
-          transition={
-            speech.isRecording ? { repeat: Infinity, duration: 0.8 } : undefined
-          }
-          onClick={() => void summarize()}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-300/40 bg-emerald-500/15 px-4 py-3 text-sm font-bold text-emerald-100 hover:bg-emerald-500 hover:text-slate-950"
-        >
-          <Mic className="size-5" />
-          {recording ? "Gravando treino..." : "Treinar speaking opcional"}
-        </motion.button>
-
-        {score !== null && score >= 2 ? (
-          <div className="mt-4">
-            <ShareableAchievement
-              title="I summarized a tech short"
-              subtitle={`I used ${score} technical keywords in English.`}
-              stat={`${score} keywords`}
-            />
-          </div>
-        ) : null}
-      </div>
-    </article>
+    </>
   );
 }
 
@@ -332,7 +352,7 @@ function sendYoutubeCommand(
   );
 }
 
-function buildEmbedUrl(id: string) {
+function buildYoutubeShortEmbedUrl(id: string) {
   const params = new URLSearchParams({
     enablejsapi: "1",
     autoplay: "1",
@@ -352,7 +372,10 @@ function buildEmbedUrl(id: string) {
 
 function makeBatch(size: number) {
   const shuffled = shuffle(shortsPool);
-  return Array.from({ length: size }, (_, index) => shuffled[index % shuffled.length]);
+  return Array.from(
+    { length: size },
+    (_, index) => shuffled[index % shuffled.length],
+  );
 }
 
 function shuffle<T>(items: T[]) {

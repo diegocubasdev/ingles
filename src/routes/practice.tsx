@@ -98,13 +98,14 @@ export function PracticePage() {
     transcript: string,
     score: number,
     xpAward: number,
+    correct = true,
   ) {
     if (!user || !studyPlan) return;
 
     await completeTask(user.uid, task, xpAward, {
       transcript,
       score,
-      correct: true,
+      correct,
     });
 
     window.setTimeout(async () => {
@@ -206,7 +207,7 @@ function TaskRunner({
   onSuccess,
 }: {
   task: Task;
-  onSuccess: (task: Task, transcript: string, score: number, xpAward: number) => void;
+  onSuccess: CompleteTaskHandler;
 }) {
   if (task.type === TASK_TYPES.SHADOWING) {
     return <ShadowingTask task={task} onSuccess={onSuccess} />;
@@ -226,14 +227,27 @@ function ShadowingTask({ task, onSuccess }: TaskProps) {
   const [result, setResult] = useState<Feedback>("idle");
   const [revealed, setRevealed] = useState(false);
   const [attempt, setAttempt] = useState<LastAttempt | null>(null);
+  const [manualAnswer, setManualAnswer] = useState("");
 
   async function record() {
     try {
-      const transcript = await speech.startRecording();
+      const transcript = await speech.startRecording(10);
       validateSpoken(task, transcript, revealed, setResult, setAttempt, feedback, onSuccess);
     } catch {
       markSpeechNotHeard(task, setResult, setAttempt, feedback);
     }
+  }
+
+  function validateManualAnswer() {
+    validateSpoken(
+      task,
+      manualAnswer,
+      revealed,
+      setResult,
+      setAttempt,
+      feedback,
+      onSuccess,
+    );
   }
 
   return (
@@ -244,10 +258,28 @@ function ShadowingTask({ task, onSuccess }: TaskProps) {
       revealed={revealed}
       onReveal={() => setRevealed(true)}
       attempt={attempt}
+      onContinue={
+        attempt && result !== "correct"
+          ? () => completeWithZero(task, attempt.heard, onSuccess)
+          : undefined
+      }
     >
       <ListenButton label="Ouvir frase em ingles" onClick={() => void speech.speak(task.content, 1)} />
-      <MicButton recording={speech.isRecording} onClick={() => void record()} />
+      <MicButton
+        recording={speech.isRecording}
+        onClick={() => {
+          if (speech.isRecording) speech.stopRecording();
+          else void record();
+        }}
+      />
       <Transcript text={speech.transcript} />
+      <ManualSpeechFallback
+        value={manualAnswer}
+        onChange={setManualAnswer}
+        onValidate={validateManualAnswer}
+        speechError={speech.error}
+        canRecognize={speech.canRecognize}
+      />
     </TaskFrame>
   );
 }
@@ -277,6 +309,11 @@ function BlindDictationTask({ task, onSuccess }: TaskProps) {
       revealed={revealed}
       onReveal={() => setRevealed(true)}
       attempt={attempt}
+      onContinue={
+        attempt && result !== "correct"
+          ? () => completeWithZero(task, attempt.heard, onSuccess)
+          : undefined
+      }
     >
       <ListenButton label="Ouvir frase em ingles rapido" onClick={() => void speech.speak(task.content, 1.25)} />
       <label className="mt-6 flex items-center gap-2 text-base font-semibold text-slate-100">
@@ -304,6 +341,7 @@ function RapidFireTask({ task, onSuccess }: TaskProps) {
   const [result, setResult] = useState<Feedback>("idle");
   const [revealed, setRevealed] = useState(false);
   const [attempt, setAttempt] = useState<LastAttempt | null>(null);
+  const [manualAnswer, setManualAnswer] = useState("");
 
   useEffect(() => {
     if (!running || seconds <= 0) return;
@@ -335,6 +373,19 @@ function RapidFireTask({ task, onSuccess }: TaskProps) {
     }
   }
 
+  function validateManualAnswer() {
+    setRunning(false);
+    validateSpoken(
+      task,
+      manualAnswer,
+      revealed,
+      setResult,
+      setAttempt,
+      feedback,
+      onSuccess,
+    );
+  }
+
   return (
     <TaskFrame
       task={task}
@@ -343,6 +394,11 @@ function RapidFireTask({ task, onSuccess }: TaskProps) {
       revealed={revealed}
       onReveal={() => setRevealed(true)}
       attempt={attempt}
+      onContinue={
+        attempt && result !== "correct"
+          ? () => completeWithZero(task, attempt.heard, onSuccess)
+          : undefined
+      }
     >
       <div className="rounded-lg border border-white/10 bg-slate-950/60 p-5">
         <p className="text-sm font-semibold uppercase tracking-wide text-slate-400">
@@ -354,9 +410,22 @@ function RapidFireTask({ task, onSuccess }: TaskProps) {
         <span className="grid size-16 place-items-center rounded-full border border-cyan-300 font-mono text-2xl text-cyan-200">
           {seconds}
         </span>
-        <MicButton recording={speech.isRecording} onClick={() => void start()} />
+        <MicButton
+          recording={speech.isRecording}
+          onClick={() => {
+            if (speech.isRecording) speech.stopRecording();
+            else void start();
+          }}
+        />
       </div>
       <Transcript text={speech.transcript} />
+      <ManualSpeechFallback
+        value={manualAnswer}
+        onChange={setManualAnswer}
+        onValidate={validateManualAnswer}
+        speechError={speech.error}
+        canRecognize={speech.canRecognize}
+      />
     </TaskFrame>
   );
 }
@@ -380,6 +449,7 @@ function MockInterviewTask({ task, onSuccess }: TaskProps) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Feedback>("idle");
   const [revealed, setRevealed] = useState(false);
+  const [manualAnswer, setManualAnswer] = useState("");
   const currentQuestion = questions[answers.length];
 
   async function answerQuestion() {
@@ -394,6 +464,12 @@ function MockInterviewTask({ task, onSuccess }: TaskProps) {
       setResult("wrong");
       feedback(false);
     }
+  }
+
+  function saveManualAnswer() {
+    if (!manualAnswer.trim()) return;
+    setAnswers((items) => [...items, manualAnswer.trim()]);
+    setManualAnswer("");
   }
 
   async function finish() {
@@ -433,7 +509,21 @@ function MockInterviewTask({ task, onSuccess }: TaskProps) {
               onClick={() => void speech.speak(currentQuestion, 1)}
             />
           </div>
-          <MicButton recording={speech.isRecording} onClick={() => void answerQuestion()} />
+          <MicButton
+            recording={speech.isRecording}
+            onClick={() => {
+              if (speech.isRecording) speech.stopRecording();
+              else void answerQuestion();
+            }}
+          />
+          <ManualSpeechFallback
+            value={manualAnswer}
+            onChange={setManualAnswer}
+            onValidate={saveManualAnswer}
+            speechError={speech.error}
+            canRecognize={speech.canRecognize}
+            actionLabel="Salvar resposta digitada"
+          />
         </>
       ) : (
         <ActionButton disabled={loading} onClick={() => void finish()}>
@@ -458,8 +548,16 @@ function MockInterviewTask({ task, onSuccess }: TaskProps) {
 
 interface TaskProps {
   task: Task;
-  onSuccess: (task: Task, transcript: string, score: number, xpAward: number) => void;
+  onSuccess: CompleteTaskHandler;
 }
+
+type CompleteTaskHandler = (
+  task: Task,
+  transcript: string,
+  score: number,
+  xpAward: number,
+  correct?: boolean,
+) => void;
 
 function TaskFrame({
   task,
@@ -468,6 +566,7 @@ function TaskFrame({
   revealed,
   onReveal,
   attempt,
+  onContinue,
   children,
 }: {
   task: Task;
@@ -476,6 +575,7 @@ function TaskFrame({
   revealed: boolean;
   onReveal: () => void;
   attempt: LastAttempt | null;
+  onContinue?: () => void;
   children: React.ReactNode;
 }) {
   const scenario = task.contextScenario || scenarioForTask(task);
@@ -542,6 +642,15 @@ function TaskFrame({
         <AttemptDiff attempt={attempt} feedback={feedback} />
       ) : null}
       <FeedbackMessage feedback={feedback} />
+      {onContinue && feedback !== "correct" ? (
+        <button
+          type="button"
+          onClick={onContinue}
+          className="mt-4 inline-flex w-full items-center justify-center rounded-lg border border-amber-300/40 bg-amber-300/10 px-4 py-3 text-sm font-semibold text-amber-100 hover:bg-amber-300/20 sm:w-auto"
+        >
+          Concluir treino e seguir sem XP
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -583,7 +692,7 @@ function MicButton({
       className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-400 px-4 py-4 font-semibold text-slate-950 sm:w-auto"
     >
       <Mic className="size-5" />
-      {recording ? "Gravando..." : "Gravar resposta"}
+      {recording ? "Parar e validar" : "Gravar resposta"}
     </motion.button>
   );
 }
@@ -661,6 +770,49 @@ function Transcript({ text }: { text: string }) {
   ) : null;
 }
 
+function ManualSpeechFallback({
+  value,
+  onChange,
+  onValidate,
+  speechError,
+  canRecognize,
+  actionLabel = "Validar texto digitado",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onValidate: () => void;
+  speechError?: string | null;
+  canRecognize: boolean;
+  actionLabel?: string;
+}) {
+  return (
+    <div className="mt-5 rounded-lg border border-white/10 bg-slate-950/50 p-4">
+      <p className="text-sm font-semibold text-slate-100">
+        {speechError || !canRecognize
+          ? "Microfone nao capturou bem?"
+          : "Fallback rapido se o audio sair errado"}
+      </p>
+      <p className="mt-1 text-sm leading-6 text-slate-400">
+        Digite o que voce falou para validar ou salvar a tentativa sem ficar travado.
+      </p>
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Ex: I deployed the hotfix."
+        className="mt-3 w-full rounded-lg border border-white/10 bg-slate-950/80 px-4 py-3 text-white outline-none focus:border-emerald-300"
+      />
+      <button
+        type="button"
+        disabled={!value.trim()}
+        onClick={onValidate}
+        className="mt-3 inline-flex w-full items-center justify-center rounded-lg bg-emerald-400 px-4 py-3 text-sm font-semibold text-slate-950 disabled:opacity-50 sm:w-auto"
+      >
+        {actionLabel}
+      </button>
+    </div>
+  );
+}
+
 function FeedbackMessage({ feedback }: { feedback: Feedback }) {
   if (feedback === "idle") return null;
   const copy = {
@@ -716,9 +868,17 @@ function validateSpoken(
   setResult: (feedback: Feedback) => void,
   setAttempt: (attempt: LastAttempt | null) => void,
   feedback: (correct: boolean) => void,
-  onSuccess: (task: Task, transcript: string, score: number, xpAward: number) => void,
+  onSuccess: CompleteTaskHandler,
 ) {
   if (!transcript.trim()) {
+    if (revealed) {
+      setAttempt({ expected: task.expectedAnswer, heard: task.expectedAnswer });
+      setResult("correct");
+      feedback(true);
+      onSuccess(task, task.expectedAnswer, 1, 0, true);
+      return;
+    }
+
     markSpeechNotHeard(task, setResult, setAttempt, feedback);
     return;
   }
@@ -729,6 +889,18 @@ function validateSpoken(
   setResult(correct ? "correct" : score >= 0.68 ? "almost" : "wrong");
   feedback(correct);
   if (correct) onSuccess(task, transcript, score, revealed ? 0 : 10);
+}
+
+function completeWithZero(
+  task: Task,
+  transcript: string,
+  onSuccess: CompleteTaskHandler,
+) {
+  const cleanTranscript =
+    transcript && !transcript.startsWith("Nao consegui ouvir")
+      ? transcript
+      : "Tentativa concluida sem reconhecimento de audio.";
+  onSuccess(task, cleanTranscript, scoreAnswer(cleanTranscript, task), 0, false);
 }
 
 function markSpeechNotHeard(

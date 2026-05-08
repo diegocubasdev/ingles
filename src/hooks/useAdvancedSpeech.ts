@@ -6,17 +6,22 @@ type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 interface SpeechRecognitionLike extends EventTarget {
   lang: string;
   interimResults: boolean;
+  continuous?: boolean;
   maxAlternatives: number;
   start: () => void;
   stop: () => void;
   onstart: (() => void) | null;
   onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: (() => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
   onend: (() => void) | null;
 }
 
 interface SpeechRecognitionEventLike {
   results: SpeechRecognitionResultListLike;
+}
+
+interface SpeechRecognitionErrorEventLike {
+  error?: string;
 }
 
 interface SpeechRecognitionResultListLike {
@@ -97,13 +102,24 @@ export function useAdvancedSpeech() {
 
       let finalTranscript = "";
       let timeoutId: number | undefined;
+      let settled = false;
       const recognition = new SpeechRecognitionApi();
       recognitionRef.current = recognition;
       recognition.lang = "en-US";
+      recognition.continuous = false;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
       setError(null);
       setTranscript("");
+
+      const settle = () => {
+        if (settled) return;
+        settled = true;
+        if (timeoutId) window.clearTimeout(timeoutId);
+        recognitionRef.current = null;
+        setState("idle");
+        resolve(finalTranscript.trim());
+      };
 
       recognition.onstart = () => {
         setState("recording");
@@ -124,20 +140,33 @@ export function useAdvancedSpeech() {
         setTranscript(spoken);
       };
 
-      recognition.onerror = () => {
-        if (timeoutId) window.clearTimeout(timeoutId);
-        setState("idle");
-        setError("Nao consegui entender sua fala.");
-        resolve(finalTranscript.trim());
+      recognition.onerror = (event) => {
+        const message =
+          event.error === "not-allowed"
+            ? "Permita o acesso ao microfone para gravar sua resposta."
+            : event.error === "audio-capture"
+              ? "Nao encontrei um microfone ativo neste dispositivo."
+              : event.error === "no-speech"
+                ? "Nao detectei fala. Tente falar um pouco mais perto do microfone."
+                : "Nao consegui entender sua fala.";
+        setError(message);
+        settle();
       };
 
       recognition.onend = () => {
-        if (timeoutId) window.clearTimeout(timeoutId);
-        setState("idle");
-        resolve(finalTranscript.trim());
+        settle();
       };
 
-      recognition.start();
+      try {
+        recognition.start();
+      } catch (caughtError) {
+        const message =
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Nao consegui iniciar a gravacao.";
+        setError(message);
+        reject(new Error(message));
+      }
     });
   }, []);
 
