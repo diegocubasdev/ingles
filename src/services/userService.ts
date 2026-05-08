@@ -12,8 +12,10 @@ import {
   getDoc,
   serverTimestamp,
   setDoc,
+  updateDoc,
   type Timestamp,
 } from "firebase/firestore";
+import { auth, db } from "./firebase";
 import { deleteStudyPlan } from "./studyPlanService";
 import type { User } from "../types";
 
