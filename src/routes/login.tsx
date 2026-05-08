@@ -96,6 +96,26 @@ export function Login() {
     } catch (err) {
       console.error("Login error:", err);
 
+      const errorCode =
+        typeof err === "object" &&
+        err !== null &&
+        "code" in err &&
+        typeof (err as { code?: unknown }).code === "string"
+          ? (err as { code: string }).code
+          : "";
+
+      if (
+        errorCode === "auth/popup-blocked" ||
+        errorCode === "auth/popup-closed-by-user" ||
+        errorCode === "auth/cancelled-popup-request"
+      ) {
+        setError(
+          "O navegador bloqueou o popup. Tente novamente ou abra pelo Safari.",
+        );
+        setLoading(false);
+        return;
+      }
+
       const errorMessage =
         err instanceof Error ? err.message : "Erro desconhecido";
 
