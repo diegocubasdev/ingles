@@ -1,15 +1,24 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import {
   collection,
   doc,
   runTransaction,
   serverTimestamp,
   writeBatch,
-} from 'firebase/firestore'
-import { db } from './firebase'
-import { PLAN_DAYS, TASK_TYPES, type EnglishLevel, type GeneratedPlan, type PlanType } from '../types'
+} from "firebase/firestore";
+import { db } from "./firebase";
+import {
+  PLAN_DAYS,
+  TASK_TYPES,
+  type EnglishLevel,
+  type GeneratedPlan,
+  type PlanType,
+} from "../types";
 
-export function buildGeminiPrompt(currentLevel: EnglishLevel, totalDays: number) {
+export function buildGeminiPrompt(
+  currentLevel: EnglishLevel,
+  totalDays: number,
+) {
   return `You are an expert English curriculum designer for Brazilian Portuguese speakers learning English for Software Engineering careers abroad.
 
 Create an intensive English study plan as STRICT JSON only. Do not include markdown, comments, explanations, or trailing commas.
@@ -118,39 +127,45 @@ Rules:
 - sentenceParts must help the student complete, chunk, and pronounce the answer.
 - Hints should explain how to say the answer naturally, including pronunciation notes.
 - Avoid offensive, adult, political, medical, or legally sensitive content.
-- Keep JSON valid and parseable by JSON.parse.`
+- Keep JSON valid and parseable by JSON.parse.`;
 }
 
-export async function generateIntensivePlan(uid: string, currentLevel: EnglishLevel, planType: PlanType) {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY
+export async function generateIntensivePlan(
+  uid: string,
+  currentLevel: EnglishLevel,
+  planType: PlanType,
+) {
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error('Configure VITE_GEMINI_API_KEY para gerar o plano.')
+    throw new Error("Configure VITE_GEMINI_API_KEY para gerar o plano.");
   }
 
-  const totalDays = PLAN_DAYS[planType]
-  const genAI = new GoogleGenerativeAI(apiKey)
+  const totalDays = PLAN_DAYS[planType];
+  const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
-    model: import.meta.env.VITE_GEMINI_MODEL ?? 'gemini-flash-latest',
-    generationConfig: { responseMimeType: 'application/json' },
-  })
+    model: import.meta.env.VITE_GEMINI_MODEL ?? "gemini-flash-latest",
+    generationConfig: { responseMimeType: "application/json" },
+  });
 
-  const response = await model.generateContent(buildGeminiPrompt(currentLevel, totalDays))
-  const plan = parseGeneratedPlan(response.response.text(), totalDays)
+  const response = await model.generateContent(
+    buildGeminiPrompt(currentLevel, totalDays),
+  );
+  const plan = parseGeneratedPlan(response.response.text(), totalDays);
 
   await runTransaction(db, async (transaction) => {
-    const userRef = doc(db, 'users', uid)
-    const userSnapshot = await transaction.get(userRef)
+    const userRef = doc(db, "users", uid);
+    const userSnapshot = await transaction.get(userRef);
 
     if (!userSnapshot.exists()) {
-      throw new Error('Usuario nao encontrado.')
+      throw new Error("Usuario nao encontrado.");
     }
 
-    const activePlan = userSnapshot.data().activePlan as PlanType | null
+    const activePlan = userSnapshot.data().activePlan as PlanType | null;
     if (activePlan !== null) {
-      throw new Error('Voce ja possui um plano ativo.')
+      throw new Error("Voce ja possui um plano ativo.");
     }
 
-    const planRef = doc(db, 'users', uid, 'studyPlan', 'current')
+    const planRef = doc(db, "users", uid, "studyPlan", "current");
     transaction.set(planRef, {
       uid,
       activePlan: planType,
@@ -159,45 +174,52 @@ export async function generateIntensivePlan(uid: string, currentLevel: EnglishLe
       currentDay: 1,
       startedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
-    })
+    });
     transaction.update(userRef, {
       activePlan: planType,
       planStartDate: serverTimestamp(),
       updatedAt: serverTimestamp(),
-    })
-  })
+    });
+  });
 
-  await saveGeneratedTasks(uid, plan)
+  await saveGeneratedTasks(uid, plan);
 }
 
 function parseGeneratedPlan(rawText: string, totalDays: number): GeneratedPlan {
   const cleaned = rawText
     .trim()
-    .replace(/^```json\s*/i, '')
-    .replace(/^```\s*/i, '')
-    .replace(/```$/i, '')
-    .trim()
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
 
-  const parsed = JSON.parse(cleaned) as GeneratedPlan
+  const parsed = JSON.parse(cleaned) as GeneratedPlan;
 
   if (!Array.isArray(parsed.days) || parsed.days.length !== totalDays) {
-    throw new Error('A resposta da IA nao trouxe a quantidade esperada de dias.')
+    throw new Error(
+      "A resposta da IA nao trouxe a quantidade esperada de dias.",
+    );
   }
 
   parsed.days.forEach((day) => {
     if (!Number.isInteger(day.day) || !day.theme || !Array.isArray(day.tasks)) {
-      throw new Error('A resposta da IA trouxe um dia invalido.')
+      throw new Error("A resposta da IA trouxe um dia invalido.");
     }
 
     day.tasks.forEach((task) => {
-      const isKnownType = Object.values(TASK_TYPES).includes(task.type)
-      if (!isKnownType || !task.content || !task.prompt || !task.expectedAnswer) {
-        throw new Error('A resposta da IA trouxe uma tarefa invalida.')
+      const isKnownType = Object.values(TASK_TYPES).includes(task.type);
+      if (
+        !isKnownType ||
+        !task.content ||
+        !task.prompt ||
+        !task.expectedAnswer
+      ) {
+        throw new Error("A resposta da IA trouxe uma tarefa invalida.");
       }
-    })
-  })
+    });
+  });
 
-  return parsed
+  return parsed;
 }
 
 async function saveGeneratedTasks(uid: string, plan: GeneratedPlan) {
@@ -208,8 +230,11 @@ async function saveGeneratedTasks(uid: string, plan: GeneratedPlan) {
         ...task,
         words: Array.isArray(task.words) ? task.words : [],
         hints: Array.isArray(task.hints) ? task.hints : [],
-        translation: typeof task.translation === 'string' ? task.translation : '',
-        sentenceParts: Array.isArray(task.sentenceParts) ? task.sentenceParts : [],
+        translation:
+          typeof task.translation === "string" ? task.translation : "",
+        sentenceParts: Array.isArray(task.sentenceParts)
+          ? task.sentenceParts
+          : [],
         day: day.day,
         order: index + 1,
         theme: day.theme,
@@ -217,16 +242,16 @@ async function saveGeneratedTasks(uid: string, plan: GeneratedPlan) {
         createdAt: serverTimestamp(),
       },
     })),
-  )
+  );
 
   for (let index = 0; index < taskWrites.length; index += 450) {
-    const batch = writeBatch(db)
-    const chunk = taskWrites.slice(index, index + 450)
+    const batch = writeBatch(db);
+    const chunk = taskWrites.slice(index, index + 450);
 
     chunk.forEach((task) => {
-      batch.set(doc(collection(db, 'users', uid, 'tasks'), task.id), task.data)
-    })
+      batch.set(doc(collection(db, "users", uid, "tasks"), task.id), task.data);
+    });
 
-    await batch.commit()
+    await batch.commit();
   }
 }
