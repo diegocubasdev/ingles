@@ -24,17 +24,30 @@ const dashboardRoute = createRoute({
   path: "/dashboard",
   beforeLoad: async (): Promise<void> => {
     return new Promise<void>((resolve, reject) => {
+      let timeoutId: NodeJS.Timeout;
+
       const unsubscribe = onAuthStateChanged(auth, (user) => {
+        clearTimeout(timeoutId);
         unsubscribe();
+
         if (
           !user ||
           !user.providerData.some((p) => p.providerId === "google.com")
         ) {
+          console.log("Auth check failed - redirecting to login. User:", user);
           reject(redirect({ to: "/login" }));
         } else {
+          console.log("Auth check passed - user:", user.email);
           resolve();
         }
       });
+
+      // Timeout after 10 seconds
+      timeoutId = setTimeout(() => {
+        unsubscribe();
+        console.error("Auth check timeout");
+        reject(redirect({ to: "/login" }));
+      }, 10000);
     });
   },
   component: DashboardPage,
@@ -45,17 +58,30 @@ const practiceRoute = createRoute({
   path: "/practice",
   beforeLoad: async (): Promise<void> => {
     return new Promise<void>((resolve, reject) => {
+      let timeoutId: NodeJS.Timeout;
+
       const unsubscribe = onAuthStateChanged(auth, (user) => {
+        clearTimeout(timeoutId);
         unsubscribe();
+
         if (
           !user ||
           !user.providerData.some((p) => p.providerId === "google.com")
         ) {
+          console.log("Auth check failed - redirecting to login. User:", user);
           reject(redirect({ to: "/login" }));
         } else {
+          console.log("Auth check passed - user:", user.email);
           resolve();
         }
       });
+
+      // Timeout after 10 seconds
+      timeoutId = setTimeout(() => {
+        unsubscribe();
+        console.error("Auth check timeout");
+        reject(redirect({ to: "/login" }));
+      }, 10000);
     });
   },
   component: PracticePage,

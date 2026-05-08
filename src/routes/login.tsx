@@ -14,8 +14,12 @@ export function Login() {
     // Check for redirect result on component mount
     const checkRedirectResult = async () => {
       try {
+        console.log("Checking for redirect result...");
         const result = await getRedirectResult(auth);
         if (result?.user) {
+          console.log("Redirect result found, user:", result.user.email);
+          // Give Firebase a moment to update state
+          await new Promise((resolve) => setTimeout(resolve, 500));
           navigate({ to: "/dashboard" });
         }
       } catch (err) {
@@ -33,8 +37,14 @@ export function Login() {
     setLoading(true);
     setError(null);
     try {
-      await signInWithGoogle();
-      // If popup succeeds, navigate immediately
+      console.log("Starting Google sign-in...");
+      const user = await signInWithGoogle();
+      console.log("Sign-in successful, user:", user);
+
+      // Give Firebase a moment to update auth state before navigating
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      console.log("Navigating to dashboard...");
       navigate({ to: "/dashboard" });
     } catch (err) {
       console.error("Login error:", err);
