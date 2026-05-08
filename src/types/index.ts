@@ -62,6 +62,7 @@ export interface Task {
   prompt: string;
   contextScenario: string;
   instructionText: string;
+  grammarFocus: string;
   expectedAnswer: string;
   acceptableAnswers: string[];
   words: string[];

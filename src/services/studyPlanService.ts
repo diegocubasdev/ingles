@@ -21,7 +21,7 @@ import {
   localDb,
   type LocalTask,
 } from "./localDb";
-import type { PlanType, PracticeAttempt, StudyPlan, Task } from "../types";
+import { TASK_TYPES, type PlanType, type PracticeAttempt, type StudyPlan, type Task } from "../types";
 
 export async function getCurrentStudyPlan(
   uid: string,
@@ -48,7 +48,7 @@ export async function getTasksForDay(uid: string, day: number): Promise<Task[]> 
   }));
 
   await cacheTasks(uid, tasks);
-  return tasks;
+  return tasks.map(normalizeTaskForPractice);
 }
 
 export async function saveGeneratedPlanLocally({
@@ -222,5 +222,19 @@ export async function syncResetPlan(uid: string) {
 function stripLocalId(task: LocalTask): Task {
   const cleanTask = { ...task };
   delete cleanTask.localId;
-  return cleanTask;
+  return normalizeTaskForPractice(cleanTask);
+}
+
+function normalizeTaskForPractice(task: Task): Task {
+  return {
+    ...task,
+    grammarFocus: task.grammarFocus || grammarFocusForTask(task.type),
+  };
+}
+
+function grammarFocusForTask(type: Task["type"]) {
+  if (type === TASK_TYPES.RAPID_FIRE) return "Conditionals";
+  if (type === TASK_TYPES.BLIND_DICTATION) return "Modal Verbs";
+  if (type === TASK_TYPES.MOCK_INTERVIEW) return "Phrasal Verbs";
+  return "Present Perfect";
 }

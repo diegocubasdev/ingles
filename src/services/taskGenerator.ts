@@ -24,6 +24,14 @@ export function buildGeminiPrompt(
   techStack: TechStack,
   totalDays: number,
 ) {
+  return generateTaskBatch(currentLevel, techStack, totalDays);
+}
+
+export function generateTaskBatch(
+  currentLevel: EnglishLevel,
+  techStack: TechStack,
+  totalDays: number,
+) {
   return `You are an English acquisition expert for Brazilian software developers preparing for international jobs.
 
 Create an offline-first speaking/listening training plan as STRICT JSON only.
@@ -38,7 +46,28 @@ Generate exactly ${totalDays} day objects. Each day must contain exactly 4 tasks
 - 1 rapid_fire
 - 1 mock_interview
 
-Use ONLY jargon and situations from ${techStack}. Examples must feel like real work: pull requests, deploy failures, standups, incidents, CORS, API contracts, CI, debugging, cloud, tests, refactors, product pressure.
+CONTENT STRATEGY: Applied Grammar in Tech Context.
+Every task must train one explicit grammar target embedded inside a real software engineering scenario. Use ONLY jargon and situations from ${techStack}. Examples must feel like real work: components, APIs, mobile/web flows, deploy failures, pull requests, CI/CD, incidents, CORS, API contracts, state management, debugging, cloud, tests, refactors, architecture trade-offs, release pressure, auth, database migrations, observability, and performance.
+
+MANDATORY GRAMMAR + JARGON MATRIX:
+1. Present Perfect & Debugging
+   - Use when the developer explains something recently fixed, deployed, investigated, reproduced, or not fixed yet.
+   - Example expectedAnswer: "I have just deployed the Firebase functions, but the auth bug hasn't been fixed yet."
+2. Conditionals & Architecture
+   - Use for technical decision-making, trade-offs, migrations, performance, scalability, and architecture consequences.
+   - Example expectedAnswer: "If we migrate the state management to this new pattern, we will reduce the rendering time significantly."
+3. Modal Verbs & Code Review
+   - Use could, should, might, would to give polite code review feedback and suggest improvements.
+   - Example expectedAnswer: "You should probably extract this logic into a custom hook, otherwise it might cause performance issues."
+4. Phrasal Verbs Tech
+   - Use essential tech phrasal verbs: figure out, roll back, scale up, refactor out, dig into, set up, break down, clean up.
+   - Example expectedAnswer: "We need to roll back the database migration while we figure out what caused the outage."
+
+Distribution rules:
+- Mix all 4 grammar targets across each generated batch.
+- Prefer one grammar target per task; set grammarFocus to the exact short label: "Present Perfect", "Conditionals", "Modal Verbs", or "Phrasal Verbs".
+- Never create generic office English. Forbidden examples include: "The meeting is at 5 PM", "Please send me the report", "I am working on a project", or any sentence without concrete software context.
+- Do not mention non-technical office administration unless it is tied to a concrete engineering scenario.
 
 Return this exact JSON shape:
 {
@@ -50,6 +79,7 @@ Return this exact JSON shape:
         {
           "type": "shadowing",
           "contextScenario": "Daily Stand-up",
+          "grammarFocus": "Present Perfect",
           "instructionText": "Ouça a frase e repita em voz alta:",
           "content": "English sentence spoken by TTS at native speed.",
           "prompt": "Repeat exactly what you hear.",
@@ -64,6 +94,7 @@ Return this exact JSON shape:
         {
           "type": "blind_dictation",
           "contextScenario": "Client Request",
+          "grammarFocus": "Modal Verbs",
           "instructionText": "Ouça o pedido e digite exatamente o que foi falado:",
           "content": "Fast English sentence for dictation.",
           "prompt": "Type what you hear.",
@@ -78,6 +109,7 @@ Return this exact JSON shape:
         {
           "type": "rapid_fire",
           "contextScenario": "Bug Report",
+          "grammarFocus": "Conditionals",
           "instructionText": "Traduza para o inglês em 5 segundos:",
           "content": "Portuguese sentence the user must say in English.",
           "prompt": "Say this in English before the timer ends.",
@@ -92,6 +124,7 @@ Return this exact JSON shape:
         {
           "type": "mock_interview",
           "contextScenario": "Daily Stand-up",
+          "grammarFocus": "Phrasal Verbs",
           "instructionText": "Responda como se estivesse em uma daily real:",
           "content": "Daily standup simulation for ${techStack}.",
           "prompt": "Answer the three questions like a real daily.",
@@ -115,11 +148,16 @@ Return this exact JSON shape:
 
 Rules:
 - All English must be natural, short, and useful in international software teams.
+- Every task must include grammarFocus.
+- The expectedAnswer must clearly demonstrate the grammarFocus.
+- The Portuguese content in rapid_fire must cue the same grammarFocus as the English expectedAnswer.
 - contextScenario must be a short workplace scenario label.
 - instructionText must be explicit in Brazilian Portuguese and tell the user exactly what to do.
 - acceptableAnswers must enable local validation without AI.
 - keywords must be lowercase English words used for local matching.
 - mock_interview must always include exactly 3 interviewQuestions.
+- Never generate generic office, travel, school, restaurant, or small-talk sentences.
+- Strictly talk about ${techStack}, components, APIs, deploys, debugging, PRs, CI/CD, architecture, web/mobile implementation, cloud, tests, incidents, and product engineering.
 - Avoid offensive, adult, political, medical, or legally sensitive content.
 - Keep JSON valid and parseable by JSON.parse.`;
 }
@@ -228,7 +266,13 @@ function parseGeneratedPlan(rawText: string, totalDays: number): GeneratedPlan {
 
     day.tasks.forEach((task) => {
       const isKnownType = Object.values(TASK_TYPES).includes(task.type);
-      if (!isKnownType || !task.content || !task.prompt || !task.expectedAnswer) {
+      if (
+        !isKnownType ||
+        !task.content ||
+        !task.prompt ||
+        !task.expectedAnswer ||
+        !task.grammarFocus
+      ) {
         throw new Error("A resposta da IA trouxe uma tarefa invalida.");
       }
     });
@@ -245,6 +289,7 @@ function flattenGeneratedTasks(uid: string, plan: GeneratedPlan): Task[] {
       id: `day-${day.day}-task-${index + 1}`,
       contextScenario: task.contextScenario || scenarioForTask(task.type),
       instructionText: task.instructionText || instructionForTask(task.type),
+      grammarFocus: task.grammarFocus || grammarFocusForTask(task.type),
       acceptableAnswers: normalizeList(task.acceptableAnswers, task.expectedAnswer),
       words: Array.isArray(task.words) ? task.words : [],
       keywords: normalizeList(task.keywords),
@@ -275,6 +320,13 @@ function instructionForTask(type: Task["type"]) {
   if (type === TASK_TYPES.BLIND_DICTATION) return "Ouça e digite o que foi falado:";
   if (type === TASK_TYPES.MOCK_INTERVIEW) return "Responda como se estivesse em uma daily real:";
   return "Ouça a frase e repita em voz alta:";
+}
+
+function grammarFocusForTask(type: Task["type"]) {
+  if (type === TASK_TYPES.RAPID_FIRE) return "Conditionals";
+  if (type === TASK_TYPES.BLIND_DICTATION) return "Modal Verbs";
+  if (type === TASK_TYPES.MOCK_INTERVIEW) return "Phrasal Verbs";
+  return "Present Perfect";
 }
 
 async function saveGeneratedTasks(uid: string, tasks: Task[]) {
