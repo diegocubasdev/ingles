@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
@@ -183,12 +183,16 @@ function AccountCard({
 }) {
   const [busy, setBusy] = useState(false);
   const authUser = getAuthUser();
+  const navigate = useNavigate();
 
   async function logout() {
     setBusy(true);
     try {
       await signOut(auth);
-      await onAccountChanged();
+      await navigate({
+        to: "/login",
+        replace: true,
+      });
     } catch (error) {
       console.error("Error signing out:", error);
     } finally {

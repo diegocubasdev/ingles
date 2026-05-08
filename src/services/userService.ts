@@ -1,10 +1,8 @@
 import {
   GoogleAuthProvider,
-  browserLocalPersistence,
   linkWithPopup,
   linkWithRedirect,
   onAuthStateChanged,
-  setPersistence,
   signInWithPopup,
   signInWithRedirect,
 } from "firebase/auth";
@@ -16,7 +14,7 @@ import {
   updateDoc,
   type Timestamp,
 } from "firebase/firestore";
-import { auth, db } from "./firebase";
+import { auth, authPersistenceReady, db } from "./firebase";
 import { deleteStudyPlan } from "./studyPlanService";
 import type { User } from "../types";
 
@@ -72,7 +70,9 @@ function shouldFallbackToRedirect(error: unknown) {
   ].includes(code);
 }
 
-export function waitForAuthUser() {
+export async function waitForAuthUser() {
+  await authPersistenceReady;
+
   return new Promise<NonNullable<typeof auth.currentUser> | null>(
     (resolve, reject) => {
       const unsubscribe = onAuthStateChanged(
@@ -135,7 +135,7 @@ export async function getOrCreateUser(): Promise<User> {
 }
 
 export async function signInWithGoogle(): Promise<User | void> {
-  await setPersistence(auth, browserLocalPersistence);
+  await authPersistenceReady;
 
   const provider = createGoogleProvider();
   const useRedirectDirectly = isPwaStandalone();

@@ -1,31 +1,33 @@
 import { createRoute, createRouter, redirect } from "@tanstack/react-router";
 import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "./services/firebase";
+import { auth, authPersistenceReady } from "./services/firebase";
 import { DashboardPage } from "./routes/dashboard";
 import { IndexPage } from "./routes";
 import { Login } from "./routes/login";
 import { PracticePage } from "./routes/practice";
 import { rootRoute } from "./routes/__root";
 
-function waitForFirebaseAuth() {
+async function waitForFirebaseAuth() {
+  await authPersistenceReady;
+
   return new Promise<typeof auth.currentUser>((resolve, reject) => {
-    let unsubscribe: (() => void) | undefined;
+    const unsubscribeRef: { current?: () => void } = {};
 
     const timeoutId = setTimeout(() => {
-      unsubscribe?.();
+      unsubscribeRef.current?.();
       reject(new Error("Auth check timeout"));
     }, 15000);
 
-    unsubscribe = onAuthStateChanged(
+    unsubscribeRef.current = onAuthStateChanged(
       auth,
       (user) => {
         clearTimeout(timeoutId);
-        unsubscribe?.();
+        unsubscribeRef.current?.();
         resolve(user);
       },
       (error) => {
         clearTimeout(timeoutId);
-        unsubscribe?.();
+        unsubscribeRef.current?.();
         reject(error);
       },
     );

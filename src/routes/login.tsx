@@ -2,7 +2,7 @@ import { BookOpenCheck, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { getRedirectResult, onAuthStateChanged } from "firebase/auth";
-import { auth } from "../services/firebase";
+import { auth, authPersistenceReady } from "../services/firebase";
 import { getOrCreateUser, signInWithGoogle } from "../services/userService";
 
 export function Login() {
@@ -27,6 +27,8 @@ export function Login() {
 
     async function initAuth() {
       try {
+        await authPersistenceReady;
+
         const redirectResult = await getRedirectResult(auth);
 
         if (!mounted) return;
