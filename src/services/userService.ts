@@ -4,7 +4,6 @@ import {
   linkWithPopup,
   onAuthStateChanged,
   setPersistence,
-  signInAnonymously,
   signInWithPopup,
 } from "firebase/auth";
 import {

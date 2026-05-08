@@ -33,7 +33,6 @@ import {
   getAuthUser,
   getOrCreateUser,
   resetPlan,
-  signInWithGoogle,
   timestampToDate,
 } from "../services/userService";
 import { PLAN_DAYS, type PlanType, type StudyPlan, type User } from "../types";

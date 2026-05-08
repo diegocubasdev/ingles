@@ -22,8 +22,8 @@ const loginRoute = createRoute({
 const dashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/dashboard",
-  beforeLoad: async () => {
-    return new Promise((resolve, reject) => {
+  beforeLoad: async (): Promise<void> => {
+    return new Promise<void>((resolve, reject) => {
       const unsubscribe = onAuthStateChanged(auth, (user) => {
         unsubscribe();
         if (
@@ -43,8 +43,8 @@ const dashboardRoute = createRoute({
 const practiceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/practice",
-  beforeLoad: async () => {
-    return new Promise((resolve, reject) => {
+  beforeLoad: async (): Promise<void> => {
+    return new Promise<void>((resolve, reject) => {
       const unsubscribe = onAuthStateChanged(auth, (user) => {
         unsubscribe();
         if (
