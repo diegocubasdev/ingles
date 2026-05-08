@@ -9,21 +9,23 @@ import { rootRoute } from "./routes/__root";
 
 function waitForFirebaseAuth() {
   return new Promise<typeof auth.currentUser>((resolve, reject) => {
+    let unsubscribe: (() => void) | undefined;
+
     const timeoutId = setTimeout(() => {
-      unsubscribe();
+      unsubscribe?.();
       reject(new Error("Auth check timeout"));
     }, 15000);
 
-    const unsubscribe = onAuthStateChanged(
+    unsubscribe = onAuthStateChanged(
       auth,
       (user) => {
         clearTimeout(timeoutId);
-        unsubscribe();
+        unsubscribe?.();
         resolve(user);
       },
       (error) => {
         clearTimeout(timeoutId);
-        unsubscribe();
+        unsubscribe?.();
         reject(error);
       },
     );

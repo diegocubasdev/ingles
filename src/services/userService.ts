@@ -1,9 +1,11 @@
 import {
   GoogleAuthProvider,
   browserLocalPersistence,
+  linkWithPopup,
   linkWithRedirect,
   onAuthStateChanged,
   setPersistence,
+  signInWithPopup,
   signInWithRedirect,
 } from "firebase/auth";
 import {
@@ -37,6 +39,20 @@ function createGoogleProvider() {
   });
 
   return provider;
+}
+
+function isPwaStandalone() {
+  const isStandaloneDisplay = window.matchMedia?.(
+    "(display-mode: standalone)",
+  ).matches;
+
+  const isIosStandalone =
+    "standalone" in window.navigator &&
+    Boolean(
+      (window.navigator as Navigator & { standalone?: boolean }).standalone,
+    );
+
+  return Boolean(isStandaloneDisplay || isIosStandalone);
 }
 
 export function waitForAuthUser() {
@@ -101,17 +117,29 @@ export async function getOrCreateUser(): Promise<User> {
   return user;
 }
 
-export async function signInWithGoogle(): Promise<void> {
+export async function signInWithGoogle(): Promise<User | void> {
   await setPersistence(auth, browserLocalPersistence);
 
   const provider = createGoogleProvider();
+  const shouldUseRedirect = isPwaStandalone();
 
   if (auth.currentUser?.isAnonymous) {
-    await linkWithRedirect(auth.currentUser, provider);
+    if (shouldUseRedirect) {
+      await linkWithRedirect(auth.currentUser, provider);
+      return;
+    }
+
+    await linkWithPopup(auth.currentUser, provider);
+    return getOrCreateUser();
+  }
+
+  if (shouldUseRedirect) {
+    await signInWithRedirect(auth, provider);
     return;
   }
 
-  await signInWithRedirect(auth, provider);
+  await signInWithPopup(auth, provider);
+  return getOrCreateUser();
 }
 
 export function getAuthUser() {

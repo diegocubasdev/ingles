@@ -14,6 +14,17 @@ export function Login() {
     let mounted = true;
     let unsubscribe: (() => void) | undefined;
 
+    async function goToDashboard() {
+      await getOrCreateUser();
+
+      if (!mounted) return;
+
+      await navigate({
+        to: "/dashboard",
+        replace: true,
+      });
+    }
+
     async function initAuth() {
       try {
         const redirectResult = await getRedirectResult(auth);
@@ -21,13 +32,7 @@ export function Login() {
         if (!mounted) return;
 
         if (redirectResult?.user) {
-          await getOrCreateUser();
-
-          await navigate({
-            to: "/dashboard",
-            replace: true,
-          });
-
+          await goToDashboard();
           return;
         }
 
@@ -36,14 +41,9 @@ export function Login() {
 
           if (user) {
             try {
-              await getOrCreateUser();
-
-              await navigate({
-                to: "/dashboard",
-                replace: true,
-              });
+              await goToDashboard();
             } catch (err) {
-              console.error("Error creating/loading user:", err);
+              console.error("Error loading user:", err);
 
               if (!mounted) return;
 
@@ -85,7 +85,14 @@ export function Login() {
     setError(null);
 
     try {
-      await signInWithGoogle();
+      const user = await signInWithGoogle();
+
+      if (user) {
+        await navigate({
+          to: "/dashboard",
+          replace: true,
+        });
+      }
     } catch (err) {
       console.error("Login error:", err);
 
