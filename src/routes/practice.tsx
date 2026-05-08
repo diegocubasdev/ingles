@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   Clock,
+  Eye,
   Keyboard,
   Loader2,
   Mic,
@@ -218,15 +219,7 @@ function ShadowingTask({ task, onSuccess }: TaskProps) {
 
   return (
     <TaskFrame task={task} state={speech.state} feedback={result}>
-      <motion.button
-        whileTap={{ scale: 0.95 }}
-        type="button"
-        onClick={() => void speech.speak(task.content, 1)}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-300 px-4 py-4 font-semibold text-slate-950 sm:w-auto"
-      >
-        <Volume2 className="size-5" />
-        Ouvir nativo
-      </motion.button>
+      <ListenButton label="Ouvir frase em ingles" onClick={() => void speech.speak(task.content, 1)} />
       <MicButton recording={speech.isRecording} onClick={() => void record()} />
       <Transcript text={speech.transcript} />
     </TaskFrame>
@@ -249,15 +242,7 @@ function BlindDictationTask({ task, onSuccess }: TaskProps) {
 
   return (
     <TaskFrame task={task} state={speech.state} feedback={result}>
-      <motion.button
-        whileTap={{ scale: 0.95 }}
-        type="button"
-        onClick={() => void speech.speak(task.content, 1.25)}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-300 px-4 py-4 font-semibold text-slate-950 sm:w-auto"
-      >
-        <Volume2 className="size-5" />
-        Ouvir rapido
-      </motion.button>
+      <ListenButton label="Ouvir frase em ingles rapido" onClick={() => void speech.speak(task.content, 1.25)} />
       <label className="mt-5 flex items-center gap-2 text-sm font-semibold text-slate-300">
         <Keyboard className="size-4" />
         Digite o que ouviu
@@ -315,6 +300,13 @@ function RapidFireTask({ task, onSuccess }: TaskProps) {
       <div className="rounded-lg border border-white/10 bg-slate-950/60 p-5">
         <p className="text-sm text-slate-400">Diga em ingles:</p>
         <p className="mt-2 text-2xl font-semibold">{task.content}</p>
+      </div>
+      <div className="mt-4">
+        <ListenButton
+          label="Ouvir uma resposta exemplo em ingles"
+          variant="secondary"
+          onClick={() => void speech.speak(task.expectedAnswer, 1)}
+        />
       </div>
       <div className="mt-5 flex items-center gap-3">
         <span className="grid size-14 place-items-center rounded-full border border-cyan-300 font-mono text-xl text-cyan-200">
@@ -376,6 +368,12 @@ function MockInterviewTask({ task, onSuccess }: TaskProps) {
             <p className="text-sm text-slate-400">Pergunta {answers.length + 1}/3</p>
             <p className="mt-2 text-2xl font-semibold">{currentQuestion}</p>
           </div>
+          <div className="mt-4">
+            <ListenButton
+              label="Ouvir pergunta em ingles"
+              onClick={() => void speech.speak(currentQuestion, 1)}
+            />
+          </div>
           <MicButton recording={speech.isRecording} onClick={() => void answerQuestion()} />
         </>
       ) : (
@@ -415,6 +413,9 @@ function TaskFrame({
   feedback: Feedback;
   children: React.ReactNode;
 }) {
+  const [showEnglish, setShowEnglish] = useState(false);
+  const hasTranslation = Boolean(task.translation?.trim());
+
   return (
     <div>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -427,9 +428,64 @@ function TaskFrame({
         </div>
         <StatePill state={state} />
       </div>
+      <div className="mt-5 rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-4">
+        <p className="font-mono text-xs uppercase tracking-wide text-cyan-200">
+          Apoio em portugues
+        </p>
+        <p className="mt-2 text-sm leading-6 text-slate-100">
+          {hasTranslation
+            ? task.translation
+            : "Use o contexto da tarefa para responder naturalmente em ingles."}
+        </p>
+        <button
+          type="button"
+          onClick={() => setShowEnglish((current) => !current)}
+          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 px-4 py-3 text-sm font-semibold text-slate-100 hover:border-cyan-200 sm:w-auto"
+        >
+          <Eye className="size-4" />
+          {showEnglish ? "Ocultar frase em ingles" : "Clique para ver frase em ingles"}
+        </button>
+        {showEnglish ? (
+          <div className="mt-4 rounded-lg bg-slate-950/70 p-4">
+            <p className="font-mono text-xs uppercase tracking-wide text-slate-400">
+              Frase em ingles
+            </p>
+            <p className="mt-2 text-lg font-semibold text-white">
+              {task.expectedAnswer}
+            </p>
+          </div>
+        ) : null}
+      </div>
       <div className="mt-6">{children}</div>
       <FeedbackMessage feedback={feedback} />
     </div>
+  );
+}
+
+function ListenButton({
+  label,
+  onClick,
+  variant = "primary",
+}: {
+  label: string;
+  onClick: () => void;
+  variant?: "primary" | "secondary";
+}) {
+  return (
+    <motion.button
+      whileTap={{ scale: 0.95 }}
+      type="button"
+      onClick={onClick}
+      className={[
+        "inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-4 font-semibold sm:w-auto",
+        variant === "primary"
+          ? "bg-cyan-300 text-slate-950"
+          : "border border-white/10 text-slate-100 hover:border-cyan-200",
+      ].join(" ")}
+    >
+      <Volume2 className="size-5" />
+      {label}
+    </motion.button>
   );
 }
 
