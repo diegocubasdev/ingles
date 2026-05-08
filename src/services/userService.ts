@@ -1,10 +1,9 @@
 import {
   GoogleAuthProvider,
   browserLocalPersistence,
-  linkWithPopup,
+  linkWithRedirect,
   onAuthStateChanged,
   setPersistence,
-  signInWithPopup,
   signInWithRedirect,
 } from "firebase/auth";
 import {
@@ -30,12 +29,22 @@ const defaultUser = (uid: string): User => ({
   planStartDate: null,
 });
 
+function createGoogleProvider() {
+  const provider = new GoogleAuthProvider();
+
+  provider.setCustomParameters({
+    prompt: "select_account",
+  });
+
+  return provider;
+}
+
 export function waitForAuthUser() {
   return new Promise<NonNullable<typeof auth.currentUser> | null>(
     (resolve, reject) => {
       const unsubscribe = onAuthStateChanged(
         auth,
-        async (firebaseUser) => {
+        (firebaseUser) => {
           unsubscribe();
           resolve(firebaseUser);
         },
@@ -47,31 +56,42 @@ export function waitForAuthUser() {
 
 export async function getOrCreateUser(): Promise<User> {
   const firebaseUser = await waitForAuthUser();
+
   if (!firebaseUser) {
     throw new Error("User not authenticated");
   }
+
   const displayName = firebaseUser.displayName ?? undefined;
   const ref = doc(db, "users", firebaseUser.uid);
   const snapshot = await getDoc(ref);
 
   if (snapshot.exists()) {
     const user = snapshot.data() as User;
+
     if (displayName && user.name !== displayName) {
       await setDoc(
         ref,
-        { name: displayName, updatedAt: serverTimestamp() },
+        {
+          name: displayName,
+          updatedAt: serverTimestamp(),
+        },
         { merge: true },
       );
-      return { ...user, name: displayName };
+
+      return {
+        ...user,
+        name: displayName,
+      };
     }
 
     return user;
   }
 
-  const user = {
+  const user: User = {
     ...defaultUser(firebaseUser.uid),
     name: displayName ?? "Student",
   };
+
   await setDoc(ref, {
     ...user,
     createdAt: serverTimestamp(),
@@ -81,36 +101,17 @@ export async function getOrCreateUser(): Promise<User> {
   return user;
 }
 
-export async function signInWithGoogle(): Promise<User> {
+export async function signInWithGoogle(): Promise<void> {
   await setPersistence(auth, browserLocalPersistence);
 
-  const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: "select_account" });
+  const provider = createGoogleProvider();
 
-  try {
-    // Try popup first
-    if (auth.currentUser?.isAnonymous) {
-      await linkWithPopup(auth.currentUser, provider);
-    } else {
-      await signInWithPopup(auth, provider);
-    }
-  } catch (popupError) {
-    console.warn("Popup failed, trying redirect:", popupError);
-    try {
-      // Fallback to redirect for PWA/mobile
-      await signInWithRedirect(auth, provider);
-      // For redirect, we need to handle the result separately
-      // But since this function returns immediately, we'll handle it in the component
-      throw new Error(
-        "Redirect initiated - please wait for redirect completion",
-      );
-    } catch (redirectError) {
-      console.error("Both popup and redirect failed:", redirectError);
-      throw redirectError;
-    }
+  if (auth.currentUser?.isAnonymous) {
+    await linkWithRedirect(auth.currentUser, provider);
+    return;
   }
 
-  return getOrCreateUser();
+  await signInWithRedirect(auth, provider);
 }
 
 export function getAuthUser() {
@@ -119,6 +120,7 @@ export function getAuthUser() {
 
 export async function getUser(uid: string): Promise<User | null> {
   const snapshot = await getDoc(doc(db, "users", uid));
+
   return snapshot.exists() ? (snapshot.data() as User) : null;
 }
 
@@ -128,6 +130,7 @@ export async function resetPlan(uid: string): Promise<void> {
     planStartDate: null,
     updatedAt: serverTimestamp(),
   });
+
   await deleteStudyPlan(uid);
 }
 

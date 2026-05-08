@@ -7,6 +7,53 @@ import { Login } from "./routes/login";
 import { PracticePage } from "./routes/practice";
 import { rootRoute } from "./routes/__root";
 
+function waitForFirebaseAuth() {
+  return new Promise<typeof auth.currentUser>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      unsubscribe();
+      reject(new Error("Auth check timeout"));
+    }, 15000);
+
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (user) => {
+        clearTimeout(timeoutId);
+        unsubscribe();
+        resolve(user);
+      },
+      (error) => {
+        clearTimeout(timeoutId);
+        unsubscribe();
+        reject(error);
+      },
+    );
+  });
+}
+
+async function requireAuth() {
+  try {
+    const user = await waitForFirebaseAuth();
+
+    if (!user) {
+      throw redirect({
+        to: "/login",
+        replace: true,
+      });
+    }
+
+    return user;
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error("Auth check error:", error.message);
+    }
+
+    throw redirect({
+      to: "/login",
+      replace: true,
+    });
+  }
+}
+
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
@@ -22,33 +69,8 @@ const loginRoute = createRoute({
 const dashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/dashboard",
-  beforeLoad: async (): Promise<void> => {
-    return new Promise<void>((resolve, reject) => {
-      let timeoutId: ReturnType<typeof setTimeout>;
-
-      const unsubscribe = onAuthStateChanged(auth, (user) => {
-        clearTimeout(timeoutId);
-        unsubscribe();
-
-        if (
-          !user ||
-          !user.providerData.some((p) => p.providerId === "google.com")
-        ) {
-          console.log("Auth check failed - redirecting to login. User:", user);
-          reject(redirect({ to: "/login" }));
-        } else {
-          console.log("Auth check passed - user:", user.email);
-          resolve();
-        }
-      });
-
-      // Timeout after 10 seconds
-      timeoutId = setTimeout(() => {
-        unsubscribe();
-        console.error("Auth check timeout");
-        reject(redirect({ to: "/login" }));
-      }, 10000);
-    });
+  beforeLoad: async () => {
+    await requireAuth();
   },
   component: DashboardPage,
 });
@@ -56,33 +78,8 @@ const dashboardRoute = createRoute({
 const practiceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/practice",
-  beforeLoad: async (): Promise<void> => {
-    return new Promise<void>((resolve, reject) => {
-      let timeoutId: ReturnType<typeof setTimeout>;
-
-      const unsubscribe = onAuthStateChanged(auth, (user) => {
-        clearTimeout(timeoutId);
-        unsubscribe();
-
-        if (
-          !user ||
-          !user.providerData.some((p) => p.providerId === "google.com")
-        ) {
-          console.log("Auth check failed - redirecting to login. User:", user);
-          reject(redirect({ to: "/login" }));
-        } else {
-          console.log("Auth check passed - user:", user.email);
-          resolve();
-        }
-      });
-
-      // Timeout after 10 seconds
-      timeoutId = setTimeout(() => {
-        unsubscribe();
-        console.error("Auth check timeout");
-        reject(redirect({ to: "/login" }));
-      }, 10000);
-    });
+  beforeLoad: async () => {
+    await requireAuth();
   },
   component: PracticePage,
 });
@@ -94,7 +91,9 @@ const routeTree = rootRoute.addChildren([
   practiceRoute,
 ]);
 
-export const router = createRouter({ routeTree });
+export const router = createRouter({
+  routeTree,
+});
 
 declare module "@tanstack/react-router" {
   interface Register {
