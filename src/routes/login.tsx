@@ -1,4 +1,4 @@
-import { Loader2 } from "lucide-react";
+import { BookOpenCheck, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { getRedirectResult, onAuthStateChanged } from "firebase/auth";
@@ -26,12 +26,7 @@ export function Login() {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (!mounted) return;
 
-      // Precisamos garantir a mesma validação que existe no seu router.tsx
-      const hasGoogleProvider = user?.providerData.some(
-        (p) => p.providerId === "google.com",
-      );
-
-      if (user && hasGoogleProvider) {
+      if (user) {
         void navigate({ to: "/dashboard" });
       } else {
         setLoading(false);
@@ -65,11 +60,7 @@ export function Login() {
     <div className="flex min-h-[calc(100vh-80px)] items-center justify-center px-4">
       <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-8 shadow-lg dark:border-slate-800 dark:bg-slate-900">
         <div className="text-center">
-          <img
-            src="/pwa-192x192.png"
-            alt="Logo do PWA"
-            className="mx-auto size-20 rounded-2xl shadow-sm"
-          />
+          <BookOpenCheck className="mx-auto size-12 text-slate-950 dark:text-white" />
           <h1 className="mt-4 text-2xl font-bold text-slate-950 dark:text-white">
             Intensive English
           </h1>
