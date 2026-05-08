@@ -24,7 +24,7 @@ const dashboardRoute = createRoute({
   path: "/dashboard",
   beforeLoad: async (): Promise<void> => {
     return new Promise<void>((resolve, reject) => {
-      let timeoutId: NodeJS.Timeout;
+      let timeoutId: ReturnType<typeof setTimeout>;
 
       const unsubscribe = onAuthStateChanged(auth, (user) => {
         clearTimeout(timeoutId);
@@ -58,7 +58,7 @@ const practiceRoute = createRoute({
   path: "/practice",
   beforeLoad: async (): Promise<void> => {
     return new Promise<void>((resolve, reject) => {
-      let timeoutId: NodeJS.Timeout;
+      let timeoutId: ReturnType<typeof setTimeout>;
 
       const unsubscribe = onAuthStateChanged(auth, (user) => {
         clearTimeout(timeoutId);
