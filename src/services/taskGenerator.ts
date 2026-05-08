@@ -10,7 +10,7 @@ import { db } from './firebase'
 import { PLAN_DAYS, TASK_TYPES, type EnglishLevel, type GeneratedPlan, type PlanType } from '../types'
 
 export function buildGeminiPrompt(currentLevel: EnglishLevel, totalDays: number) {
-  return `You are an expert English curriculum designer for Brazilian Portuguese speakers.
+  return `You are an expert English curriculum designer for Brazilian Portuguese speakers learning English for Software Engineering careers abroad.
 
 Create an intensive English study plan as STRICT JSON only. Do not include markdown, comments, explanations, or trailing commas.
 
@@ -18,15 +18,20 @@ Student level: ${currentLevel}
 Plan length in days: ${totalDays}
 
 Generate exactly ${totalDays} day objects. Each day must contain 10 tasks with a balanced mix:
-- 4 LISTENING tasks
-- 3 PRONUNCIATION tasks
-- 3 BUILDING tasks
+- 2 LISTENING tasks
+- 2 PRONUNCIATION tasks
+- 2 BUILDING tasks
+- 2 DAILY_STANDUP tasks
+- 1 TECH_SHADOWING task
+- 1 CODE_REVIEW_LISTENING task
 
-The plan must teach practical real-life English using high-frequency situations: introductions, work, travel, food, routines, opinions, problems, requests, scheduling, and small talk.
+The plan must teach practical real-life English using high-frequency situations in Software Engineering: daily stand-ups, code reviews, shadowing senior devs, debugging, deployments, API integrations, database queries, cloud platforms, and technical discussions.
+
+Vocabulary focus: front-end architecture, backend integrations, databases, cloud deploys, bug fixes, pull requests, sprints, agile methodologies.
 
 Difficulty rule:
 - Use the student's current level as the base.
-- Include some i+1 challenge, especially in PRONUNCIATION tasks.
+- Include some i+1 challenge, especially in PRONUNCIATION and speaking tasks.
 - Keep sentences useful, natural, and short enough for daily practice.
 
 Return this exact JSON shape:
@@ -65,6 +70,36 @@ Return this exact JSON shape:
           "hints": ["grammar or word order hint in Portuguese"],
           "translation": "Brazilian Portuguese translation of the answer",
           "sentenceParts": ["I", "____", "coffee", "every morning"]
+        },
+        {
+          "type": "DAILY_STANDUP",
+          "content": "Context for the stand-up: what you did yesterday, what you'll do today, blockers.",
+          "prompt": "Explain your stand-up update in 60 seconds.",
+          "expectedAnswer": "Expected key points or evaluation criteria.",
+          "words": [],
+          "hints": ["structure hint in Portuguese"],
+          "translation": "Brazilian Portuguese translation of the context",
+          "sentenceParts": []
+        },
+        {
+          "type": "TECH_SHADOWING",
+          "content": "Technical phrase to shadow.",
+          "prompt": "Listen and repeat the phrase.",
+          "expectedAnswer": "The exact phrase to repeat.",
+          "words": ["key", "technical", "words"],
+          "hints": ["pronunciation hints"],
+          "translation": "Brazilian Portuguese translation",
+          "sentenceParts": []
+        },
+        {
+          "type": "CODE_REVIEW_LISTENING",
+          "content": "Code review feedback text to be spoken.",
+          "prompt": "Summarize the reviewer's feedback.",
+          "expectedAnswer": "Expected summary or key points.",
+          "words": [],
+          "hints": ["listening hints"],
+          "translation": "Brazilian Portuguese translation",
+          "sentenceParts": []
         }
       ]
     }
@@ -75,10 +110,13 @@ Rules:
 - All expectedAnswer values must be in English.
 - BUILDING words must contain every word needed to form expectedAnswer, shuffled.
 - LISTENING content must be in English and suitable for speech synthesis.
+- DAILY_STANDUP content provides context for speaking under pressure.
+- TECH_SHADOWING expectedAnswer is the phrase to repeat, words are key terms to validate.
+- CODE_REVIEW_LISTENING content is spoken feedback, expectedAnswer is summary.
 - Every task must include 1 to 3 didactic hints in Brazilian Portuguese.
 - Every task must include translation in Brazilian Portuguese.
-- sentenceParts must help the student complete, chunk, and pronounce the answer. Include useful fragments, blanks, or syllable-like rhythm chunks.
-- Hints should explain how to say the answer naturally, including pronunciation notes when useful.
+- sentenceParts must help the student complete, chunk, and pronounce the answer.
+- Hints should explain how to say the answer naturally, including pronunciation notes.
 - Avoid offensive, adult, political, medical, or legally sensitive content.
 - Keep JSON valid and parseable by JSON.parse.`
 }

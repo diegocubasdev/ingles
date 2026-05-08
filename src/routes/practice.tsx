@@ -208,6 +208,10 @@ export function PracticePage() {
 function TaskRunner({ task, busy, onSuccess }: { task: Task; busy: boolean; onSuccess: (xpAward: number) => void }) {
   if (task.type === TASK_TYPES.LISTENING) return <ListeningTask task={task} busy={busy} onSuccess={onSuccess} />
   if (task.type === TASK_TYPES.PRONUNCIATION) return <PronunciationTask task={task} busy={busy} onSuccess={onSuccess} />
+  if (task.type === TASK_TYPES.BUILDING) return <BuildingTask task={task} busy={busy} onSuccess={onSuccess} />
+  if (task.type === TASK_TYPES.DAILY_STANDUP) return <DailyStandupTask task={task} busy={busy} onSuccess={onSuccess} />
+  if (task.type === TASK_TYPES.TECH_SHADOWING) return <TechShadowingTask task={task} busy={busy} onSuccess={onSuccess} />
+  if (task.type === TASK_TYPES.CODE_REVIEW_LISTENING) return <CodeReviewListeningTask task={task} busy={busy} onSuccess={onSuccess} />
   return <BuildingTask task={task} busy={busy} onSuccess={onSuccess} />
 }
 
@@ -595,6 +599,197 @@ function SpeechAnswerButton({
       {listening ? <Loader2 className="size-4 animate-spin" /> : <Mic className="size-4" />}
       {listening ? 'Ouvindo...' : 'Responder falando'}
     </button>
+  )
+}
+
+function DailyStandupTask({ task, busy, onSuccess }: TaskProps) {
+  const [timeLeft, setTimeLeft] = useState(60)
+  const [isRecording, setIsRecording] = useState(false)
+  const [transcript, setTranscript] = useState('')
+  const [feedback, setFeedback] = useState<Feedback>('idle')
+  const SpeechRecognitionApi = window.SpeechRecognition ?? window.webkitSpeechRecognition
+
+  useEffect(() => {
+    if (timeLeft > 0 && isRecording) {
+      const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000)
+      return () => clearTimeout(timer)
+    } else if (timeLeft === 0 && isRecording) {
+      stopRecording()
+    }
+  }, [timeLeft, isRecording])
+
+  function startRecording() {
+    if (!SpeechRecognitionApi) return
+    const recognition = new SpeechRecognitionApi()
+    recognition.lang = 'en-US'
+    recognition.interimResults = true
+    recognition.onresult = (event) => {
+      let finalTranscript = ''
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript
+        }
+      }
+      setTranscript(finalTranscript)
+    }
+    recognition.onend = () => {
+      setIsRecording(false)
+      evaluateTranscript()
+    }
+    setIsRecording(true)
+    setTimeLeft(60)
+    recognition.start()
+  }
+
+  function stopRecording() {
+    setIsRecording(false)
+  }
+
+  function evaluateTranscript() {
+    // Simple evaluation: check if key points are mentioned
+    const keyPoints = task.expectedAnswer.toLowerCase().split(',')
+    const transcriptLower = transcript.toLowerCase()
+    const covered = keyPoints.filter(point => transcriptLower.includes(point.trim())).length
+    const score = covered / keyPoints.length
+    const isCorrect = score >= 0.7
+    setFeedback(isCorrect ? 'correct' : 'wrong')
+    playFeedbackSound(isCorrect)
+    if (isCorrect) onSuccess(10)
+  }
+
+  return (
+    <TaskFrame label="Daily Stand-up" helper="Explique seu update em 60 segundos sob pressão." prompt={task.prompt} feedback={feedback}>
+      <div className="rounded-lg bg-indigo-50 p-5 text-sm text-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-200">
+        <p className="font-semibold">Contexto:</p>
+        <p>{task.content}</p>
+      </div>
+      <div className="mt-5 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-4xl font-bold text-slate-950 dark:text-white">{timeLeft}s</div>
+          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Tempo restante</p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={isRecording ? stopRecording : startRecording}
+        disabled={busy}
+        className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-4 font-semibold text-white hover:bg-red-500 disabled:opacity-60"
+      >
+        {isRecording ? <Loader2 className="size-5 animate-spin" /> : <Mic className="size-5" />}
+        {isRecording ? 'Parar Gravação' : 'Iniciar Stand-up'}
+      </button>
+      {transcript && (
+        <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">
+          Transcrição: <span className="font-semibold">{transcript}</span>
+        </p>
+      )}
+    </TaskFrame>
+  )
+}
+
+function TechShadowingTask({ task, busy, onSuccess }: TaskProps) {
+  const [speed, setSpeed] = useState(1.0)
+  const [recognizedText, setRecognizedText] = useState('')
+  const [feedback, setFeedback] = useState<Feedback>('idle')
+  const [listening, setListening] = useState(false)
+  const SpeechRecognitionApi = window.SpeechRecognition ?? window.webkitSpeechRecognition
+
+  function playPhrase() {
+    void speakEnglish(task.content, { rate: speed })
+  }
+
+  function startRecording() {
+    if (!SpeechRecognitionApi) return
+    const recognition = new SpeechRecognitionApi()
+    recognition.lang = 'en-US'
+    recognition.interimResults = false
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript
+      setRecognizedText(transcript)
+      // Check if key words are present
+      const keyWords = task.words
+      const transcriptLower = transcript.toLowerCase()
+      const matched = keyWords.filter(word => transcriptLower.includes(word.toLowerCase())).length
+      const isCorrect = matched >= keyWords.length * 0.8
+      setFeedback(isCorrect ? 'correct' : 'wrong')
+      playFeedbackSound(isCorrect)
+      if (isCorrect) onSuccess(10)
+    }
+    recognition.onend = () => setListening(false)
+    setListening(true)
+    recognition.start()
+  }
+
+  return (
+    <TaskFrame label="Tech Shadowing" helper="Ouça a frase técnica e repita com velocidade." prompt={task.prompt} feedback={feedback}>
+      <div className="rounded-lg bg-slate-50 p-5 text-lg font-semibold text-slate-950 dark:bg-slate-950 dark:text-white">
+        {task.content}
+      </div>
+      <div className="mt-4 flex gap-2">
+        {[1.0, 1.25, 1.5].map((rate) => (
+          <button
+            key={rate}
+            type="button"
+            onClick={() => setSpeed(rate)}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold ${
+              speed === rate
+                ? 'bg-indigo-600 text-white'
+                : 'border border-slate-300 text-slate-700 hover:border-slate-950 dark:border-slate-700 dark:text-slate-200'
+            }`}
+          >
+            {rate}x
+          </button>
+        ))}
+      </div>
+      <PrimaryListenButton label="Ouvir frase" onClick={playPhrase} />
+      <button
+        type="button"
+        onClick={startRecording}
+        disabled={listening || busy}
+        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-4 font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+      >
+        {listening ? <Loader2 className="size-5 animate-spin" /> : <Mic className="size-5" />}
+        {listening ? 'Ouvindo...' : 'Repetir frase'}
+      </button>
+      {recognizedText && (
+        <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">
+          Reconhecido: <span className="font-semibold">{recognizedText}</span>
+        </p>
+      )}
+    </TaskFrame>
+  )
+}
+
+function CodeReviewListeningTask({ task, busy, onSuccess }: TaskProps) {
+  const [summary, setSummary] = useState('')
+  const [feedback, setFeedback] = useState<Feedback>('idle')
+
+  function playReview() {
+    void speakEnglish(task.content, { rate: 1.2 }) // Faster for natural rhythm
+  }
+
+  function checkSummary() {
+    // Simple check: if summary includes key points
+    const expectedLower = task.expectedAnswer.toLowerCase()
+    const summaryLower = summary.toLowerCase()
+    const isCorrect = expectedLower.split(' ').some(word => summaryLower.includes(word))
+    setFeedback(isCorrect ? 'correct' : 'wrong')
+    playFeedbackSound(isCorrect)
+    if (isCorrect) onSuccess(10)
+  }
+
+  return (
+    <TaskFrame label="Code Review Listening" helper="Ouça o feedback e resuma as instruções." prompt={task.prompt} feedback={feedback}>
+      <PrimaryListenButton label="Ouvir feedback" onClick={playReview} />
+      <textarea
+        value={summary}
+        onChange={(e) => setSummary(e.target.value)}
+        placeholder="Resuma o que o revisor pediu..."
+        className="mt-5 w-full rounded-lg border border-slate-300 bg-white px-4 py-4 text-slate-950 outline-none focus:border-slate-950 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-white"
+        rows={4}
+      />
+      <ActionBar busy={busy} canCheck={summary.trim().length > 0} onCheck={checkSummary} />
+    </TaskFrame>
   )
 }
 
