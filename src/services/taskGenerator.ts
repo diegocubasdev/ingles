@@ -49,6 +49,8 @@ Return this exact JSON shape:
       "tasks": [
         {
           "type": "shadowing",
+          "contextScenario": "Daily Stand-up",
+          "instructionText": "Ouça a frase e repita em voz alta:",
           "content": "English sentence spoken by TTS at native speed.",
           "prompt": "Repeat exactly what you hear.",
           "expectedAnswer": "Exact English sentence.",
@@ -61,6 +63,8 @@ Return this exact JSON shape:
         },
         {
           "type": "blind_dictation",
+          "contextScenario": "Client Request",
+          "instructionText": "Ouça o pedido e digite exatamente o que foi falado:",
           "content": "Fast English sentence for dictation.",
           "prompt": "Type what you hear.",
           "expectedAnswer": "Exact English sentence.",
@@ -73,6 +77,8 @@ Return this exact JSON shape:
         },
         {
           "type": "rapid_fire",
+          "contextScenario": "Bug Report",
+          "instructionText": "Traduza para o inglês em 5 segundos:",
           "content": "Portuguese sentence the user must say in English.",
           "prompt": "Say this in English before the timer ends.",
           "expectedAnswer": "Natural English answer.",
@@ -85,6 +91,8 @@ Return this exact JSON shape:
         },
         {
           "type": "mock_interview",
+          "contextScenario": "Daily Stand-up",
+          "instructionText": "Responda como se estivesse em uma daily real:",
           "content": "Daily standup simulation for ${techStack}.",
           "prompt": "Answer the three questions like a real daily.",
           "expectedAnswer": "Speak clearly about yesterday, today, and blockers.",
@@ -107,6 +115,8 @@ Return this exact JSON shape:
 
 Rules:
 - All English must be natural, short, and useful in international software teams.
+- contextScenario must be a short workplace scenario label.
+- instructionText must be explicit in Brazilian Portuguese and tell the user exactly what to do.
 - acceptableAnswers must enable local validation without AI.
 - keywords must be lowercase English words used for local matching.
 - mock_interview must always include exactly 3 interviewQuestions.
@@ -233,6 +243,8 @@ function flattenGeneratedTasks(uid: string, plan: GeneratedPlan): Task[] {
       ...task,
       uid,
       id: `day-${day.day}-task-${index + 1}`,
+      contextScenario: task.contextScenario || scenarioForTask(task.type),
+      instructionText: task.instructionText || instructionForTask(task.type),
       acceptableAnswers: normalizeList(task.acceptableAnswers, task.expectedAnswer),
       words: Array.isArray(task.words) ? task.words : [],
       keywords: normalizeList(task.keywords),
@@ -249,6 +261,20 @@ function flattenGeneratedTasks(uid: string, plan: GeneratedPlan): Task[] {
       createdAt: new Date().toISOString(),
     })),
   );
+}
+
+function scenarioForTask(type: Task["type"]) {
+  if (type === TASK_TYPES.RAPID_FIRE) return "Bug Report";
+  if (type === TASK_TYPES.BLIND_DICTATION) return "Client Request";
+  if (type === TASK_TYPES.MOCK_INTERVIEW) return "Daily Stand-up";
+  return "Code Review";
+}
+
+function instructionForTask(type: Task["type"]) {
+  if (type === TASK_TYPES.RAPID_FIRE) return "Traduza para o ingles em 5 segundos:";
+  if (type === TASK_TYPES.BLIND_DICTATION) return "Ouça e digite o que foi falado:";
+  if (type === TASK_TYPES.MOCK_INTERVIEW) return "Responda como se estivesse em uma daily real:";
+  return "Ouça a frase e repita em voz alta:";
 }
 
 async function saveGeneratedTasks(uid: string, tasks: Task[]) {

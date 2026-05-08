@@ -3,6 +3,7 @@ import confetti from "canvas-confetti";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft,
+  Building2,
   CheckCircle2,
   Clock,
   Eye,
@@ -23,9 +24,15 @@ import {
   getCurrentStudyPlan,
   getTasksForDay,
 } from "../services/studyPlanService";
-import { answersMatch, normalizeAnswer, similarity } from "../services/textUtils";
+import { answersMatch, similarity } from "../services/textUtils";
 import { getOrCreateUser } from "../services/userService";
-import { TASK_TYPES, type PracticeState, type StudyPlan, type Task, type User } from "../types";
+import {
+  TASK_TYPES,
+  type PracticeState,
+  type StudyPlan,
+  type Task,
+  type User,
+} from "../types";
 
 const DING =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
@@ -33,6 +40,11 @@ const BUZZ =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
 
 type Feedback = "idle" | "correct" | "wrong" | "almost";
+
+interface LastAttempt {
+  expected: string;
+  heard: string;
+}
 
 export function PracticePage() {
   const [user, setUser] = useState<User | null>(null);
@@ -81,10 +93,15 @@ export function PracticePage() {
     return () => window.clearTimeout(id);
   }, [loadPractice]);
 
-  async function handleSuccess(task: Task, transcript: string, score: number) {
+  async function handleSuccess(
+    task: Task,
+    transcript: string,
+    score: number,
+    xpAward: number,
+  ) {
     if (!user || !studyPlan) return;
 
-    await completeTask(user.uid, task, 10, {
+    await completeTask(user.uid, task, xpAward, {
       transcript,
       score,
       correct: true,
@@ -189,7 +206,7 @@ function TaskRunner({
   onSuccess,
 }: {
   task: Task;
-  onSuccess: (task: Task, transcript: string, score: number) => void;
+  onSuccess: (task: Task, transcript: string, score: number, xpAward: number) => void;
 }) {
   if (task.type === TASK_TYPES.SHADOWING) {
     return <ShadowingTask task={task} onSuccess={onSuccess} />;
@@ -207,18 +224,23 @@ function ShadowingTask({ task, onSuccess }: TaskProps) {
   const speech = useAdvancedSpeech();
   const feedback = useFeedbackSound();
   const [result, setResult] = useState<Feedback>("idle");
+  const [revealed, setRevealed] = useState(false);
+  const [attempt, setAttempt] = useState<LastAttempt | null>(null);
 
   async function record() {
     const transcript = await speech.startRecording();
-    const score = scoreAnswer(transcript, task);
-    const correct = score >= 0.82;
-    setResult(correct ? "correct" : score >= 0.68 ? "almost" : "wrong");
-    feedback(correct);
-    if (correct) onSuccess(task, transcript, score);
+    validateSpoken(task, transcript, revealed, setResult, setAttempt, feedback, onSuccess);
   }
 
   return (
-    <TaskFrame task={task} state={speech.state} feedback={result}>
+    <TaskFrame
+      task={task}
+      state={speech.state}
+      feedback={result}
+      revealed={revealed}
+      onReveal={() => setRevealed(true)}
+      attempt={attempt}
+    >
       <ListenButton label="Ouvir frase em ingles" onClick={() => void speech.speak(task.content, 1)} />
       <MicButton recording={speech.isRecording} onClick={() => void record()} />
       <Transcript text={speech.transcript} />
@@ -231,30 +253,40 @@ function BlindDictationTask({ task, onSuccess }: TaskProps) {
   const feedback = useFeedbackSound();
   const [answer, setAnswer] = useState("");
   const [result, setResult] = useState<Feedback>("idle");
+  const [revealed, setRevealed] = useState(false);
+  const [attempt, setAttempt] = useState<LastAttempt | null>(null);
 
   function validate() {
     const score = scoreAnswer(answer, task);
-    const correct = score >= 0.82;
+    const correct = score >= 0.82 || revealed;
+    setAttempt({ expected: task.expectedAnswer, heard: answer });
     setResult(correct ? "correct" : "wrong");
     feedback(correct);
-    if (correct) onSuccess(task, answer, score);
+    if (correct) onSuccess(task, answer, score, revealed ? 0 : 10);
   }
 
   return (
-    <TaskFrame task={task} state={speech.state} feedback={result}>
+    <TaskFrame
+      task={task}
+      state={speech.state}
+      feedback={result}
+      revealed={revealed}
+      onReveal={() => setRevealed(true)}
+      attempt={attempt}
+    >
       <ListenButton label="Ouvir frase em ingles rapido" onClick={() => void speech.speak(task.content, 1.25)} />
-      <label className="mt-5 flex items-center gap-2 text-sm font-semibold text-slate-300">
-        <Keyboard className="size-4" />
-        Digite o que ouviu
+      <label className="mt-6 flex items-center gap-2 text-base font-semibold text-slate-100">
+        <Keyboard className="size-5" />
+        Digite aqui o que voce ouviu
       </label>
       <input
         value={answer}
         onChange={(event) => setAnswer(event.target.value)}
-        className="mt-3 w-full rounded-lg border border-white/10 bg-slate-950/70 px-4 py-4 text-white outline-none focus:border-cyan-300"
+        placeholder="Ex: I deployed the hotfix."
+        className="mt-3 w-full rounded-lg border border-white/10 bg-slate-950/70 px-4 py-4 text-lg text-white outline-none focus:border-cyan-300"
       />
-      <DiffFeedback input={answer} expected={task.expectedAnswer} />
       <ActionButton disabled={!answer.trim()} onClick={validate}>
-        Validar localmente
+        Validar resposta
       </ActionButton>
     </TaskFrame>
   );
@@ -266,6 +298,8 @@ function RapidFireTask({ task, onSuccess }: TaskProps) {
   const [seconds, setSeconds] = useState(5);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<Feedback>("idle");
+  const [revealed, setRevealed] = useState(false);
+  const [attempt, setAttempt] = useState<LastAttempt | null>(null);
 
   useEffect(() => {
     if (!running || seconds <= 0) return;
@@ -275,41 +309,40 @@ function RapidFireTask({ task, onSuccess }: TaskProps) {
           setRunning(false);
           feedback(false);
           setResult("wrong");
+          setAttempt({ expected: task.expectedAnswer, heard: "Tempo esgotado" });
           return 0;
         }
         return value - 1;
       });
     }, 1000);
     return () => window.clearTimeout(id);
-  }, [feedback, running, seconds]);
+  }, [feedback, running, seconds, task.expectedAnswer]);
 
   async function start() {
     setSeconds(5);
     setRunning(true);
     const transcript = await speech.startRecording(5);
     setRunning(false);
-    const score = scoreAnswer(transcript, task);
-    const correct = score >= 0.78;
-    setResult(correct ? "correct" : "wrong");
-    feedback(correct);
-    if (correct) onSuccess(task, transcript, score);
+    validateSpoken(task, transcript, revealed, setResult, setAttempt, feedback, onSuccess);
   }
 
   return (
-    <TaskFrame task={task} state={speech.state} feedback={result}>
+    <TaskFrame
+      task={task}
+      state={speech.state}
+      feedback={result}
+      revealed={revealed}
+      onReveal={() => setRevealed(true)}
+      attempt={attempt}
+    >
       <div className="rounded-lg border border-white/10 bg-slate-950/60 p-5">
-        <p className="text-sm text-slate-400">Diga em ingles:</p>
+        <p className="text-sm font-semibold uppercase tracking-wide text-slate-400">
+          Frase em portugues
+        </p>
         <p className="mt-2 text-2xl font-semibold">{task.content}</p>
       </div>
-      <div className="mt-4">
-        <ListenButton
-          label="Ouvir uma resposta exemplo em ingles"
-          variant="secondary"
-          onClick={() => void speech.speak(task.expectedAnswer, 1)}
-        />
-      </div>
-      <div className="mt-5 flex items-center gap-3">
-        <span className="grid size-14 place-items-center rounded-full border border-cyan-300 font-mono text-xl text-cyan-200">
+      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <span className="grid size-16 place-items-center rounded-full border border-cyan-300 font-mono text-2xl text-cyan-200">
           {seconds}
         </span>
         <MicButton recording={speech.isRecording} onClick={() => void start()} />
@@ -337,6 +370,7 @@ function MockInterviewTask({ task, onSuccess }: TaskProps) {
   const [aiFeedback, setAiFeedback] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Feedback>("idle");
+  const [revealed, setRevealed] = useState(false);
   const currentQuestion = questions[answers.length];
 
   async function answerQuestion() {
@@ -351,7 +385,7 @@ function MockInterviewTask({ task, onSuccess }: TaskProps) {
       setAiFeedback(response);
       setResult("correct");
       feedback(true);
-      onSuccess(task, answers.join(" "), 1);
+      onSuccess(task, answers.join(" "), 1, revealed ? 0 : 10);
     } catch (error) {
       setAiFeedback(error instanceof Error ? error.message : "Feedback indisponivel.");
       setResult("almost");
@@ -361,7 +395,14 @@ function MockInterviewTask({ task, onSuccess }: TaskProps) {
   }
 
   return (
-    <TaskFrame task={task} state={loading ? "validating" : speech.state} feedback={result}>
+    <TaskFrame
+      task={task}
+      state={loading ? "validating" : speech.state}
+      feedback={result}
+      revealed={revealed}
+      onReveal={() => setRevealed(true)}
+      attempt={null}
+    >
       {currentQuestion ? (
         <>
           <div className="rounded-lg border border-white/10 bg-slate-950/60 p-5">
@@ -399,64 +440,87 @@ function MockInterviewTask({ task, onSuccess }: TaskProps) {
 
 interface TaskProps {
   task: Task;
-  onSuccess: (task: Task, transcript: string, score: number) => void;
+  onSuccess: (task: Task, transcript: string, score: number, xpAward: number) => void;
 }
 
 function TaskFrame({
   task,
   state,
   feedback,
+  revealed,
+  onReveal,
+  attempt,
   children,
 }: {
   task: Task;
   state: PracticeState;
   feedback: Feedback;
+  revealed: boolean;
+  onReveal: () => void;
+  attempt: LastAttempt | null;
   children: React.ReactNode;
 }) {
-  const [showEnglish, setShowEnglish] = useState(false);
+  const scenario = task.contextScenario || scenarioForTask(task);
+  const instruction = task.instructionText || instructionForTask(task);
   const hasTranslation = Boolean(task.translation?.trim());
 
   return (
     <div>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="font-mono text-xs uppercase tracking-wide text-cyan-200">
-            {task.type.replace("_", " ")}
-          </p>
-          <h2 className="mt-3 text-3xl font-semibold tracking-normal">{task.prompt}</h2>
-          <p className="mt-3 text-sm leading-6 text-slate-300">{task.hints?.[0]}</p>
+        <div className="min-w-0">
+          <span className="inline-flex items-center gap-2 rounded-full bg-cyan-300 px-3 py-2 text-sm font-bold text-slate-950">
+            <Building2 className="size-4" />
+            {scenario}
+          </span>
+          <h2 className="mt-5 text-3xl font-black leading-tight tracking-normal text-white sm:text-4xl">
+            {instruction}
+          </h2>
+          <p className="mt-3 text-base leading-7 text-slate-300">{task.hints?.[0]}</p>
         </div>
         <StatePill state={state} />
       </div>
-      <div className="mt-5 rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-4">
+
+      <div className="mt-6 rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-4">
         <p className="font-mono text-xs uppercase tracking-wide text-cyan-200">
-          Apoio em portugues
+          Contexto em portugues
         </p>
-        <p className="mt-2 text-sm leading-6 text-slate-100">
+        <p className="mt-2 text-base leading-7 text-slate-100">
           {hasTranslation
             ? task.translation
-            : "Use o contexto da tarefa para responder naturalmente em ingles."}
+            : "Voce esta em uma situacao real de trabalho. Responda de forma curta, clara e natural em ingles."}
         </p>
+      </div>
+
+      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
         <button
           type="button"
-          onClick={() => setShowEnglish((current) => !current)}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 px-4 py-3 text-sm font-semibold text-slate-100 hover:border-cyan-200 sm:w-auto"
+          onClick={onReveal}
+          disabled={revealed}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 px-4 py-3 text-sm font-semibold text-slate-100 hover:border-cyan-200 disabled:opacity-70 sm:w-auto"
         >
           <Eye className="size-4" />
-          {showEnglish ? "Ocultar frase em ingles" : "Clique para ver frase em ingles"}
+          {revealed ? "Resposta revelada: XP 0" : "Nao sei o que dizer"}
         </button>
-        {showEnglish ? (
-          <div className="mt-4 rounded-lg bg-slate-950/70 p-4">
-            <p className="font-mono text-xs uppercase tracking-wide text-slate-400">
-              Frase em ingles
-            </p>
-            <p className="mt-2 text-lg font-semibold text-white">
-              {task.expectedAnswer}
-            </p>
-          </div>
+        {revealed ? (
+          <p className="text-sm font-medium text-amber-200">
+            Sem problema. Leia a frase em voz alta para treinar sem pressao.
+          </p>
         ) : null}
       </div>
+
+      {revealed ? (
+        <div className="mt-4 rounded-lg border border-amber-300/20 bg-amber-300/10 p-4">
+          <p className="font-mono text-xs uppercase tracking-wide text-amber-200">
+            Resposta esperada
+          </p>
+          <p className="mt-2 text-xl font-semibold text-white">
+            {task.expectedAnswer}
+          </p>
+        </div>
+      ) : null}
+
       <div className="mt-6">{children}</div>
+      {attempt && feedback !== "correct" ? <AttemptDiff attempt={attempt} /> : null}
       <FeedbackMessage feedback={feedback} />
     </div>
   );
@@ -465,23 +529,16 @@ function TaskFrame({
 function ListenButton({
   label,
   onClick,
-  variant = "primary",
 }: {
   label: string;
   onClick: () => void;
-  variant?: "primary" | "secondary";
 }) {
   return (
     <motion.button
       whileTap={{ scale: 0.95 }}
       type="button"
       onClick={onClick}
-      className={[
-        "inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-4 font-semibold sm:w-auto",
-        variant === "primary"
-          ? "bg-cyan-300 text-slate-950"
-          : "border border-white/10 text-slate-100 hover:border-cyan-200",
-      ].join(" ")}
+      className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-300 px-4 py-4 font-semibold text-slate-950 sm:w-auto"
     >
       <Volume2 className="size-5" />
       {label}
@@ -533,36 +590,37 @@ function ActionButton({
   );
 }
 
-function DiffFeedback({ input, expected }: { input: string; expected: string }) {
-  if (!input.trim()) return null;
-  const inputWords = normalizeAnswer(input).split(" ");
-  const expectedWords = normalizeAnswer(expected).split(" ");
-
+function AttemptDiff({ attempt }: { attempt: LastAttempt }) {
   return (
-    <div className="mt-4 flex flex-wrap gap-2">
-      {expectedWords.map((word, index) => {
-        const ok = inputWords[index] === word;
-        return (
-          <span
-            key={`${word}-${index}`}
-            className={[
-              "rounded-md px-2 py-1 text-sm",
-              ok
-                ? "bg-emerald-400/15 text-emerald-200"
-                : "bg-red-400/15 text-red-200 line-through",
-            ].join(" ")}
-          >
-            {word}
-          </span>
-        );
-      })}
+    <div className="mt-5 rounded-lg border border-red-300/20 bg-red-400/10 p-4">
+      <p className="font-mono text-xs uppercase tracking-wide text-red-200">
+        Compare e ajuste
+      </p>
+      <div className="mt-3 grid gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase text-slate-400">
+            O que esperavamos
+          </p>
+          <p className="mt-1 text-lg font-semibold text-emerald-200">
+            {attempt.expected}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase text-slate-400">
+            O que o sistema ouviu
+          </p>
+          <p className="mt-1 text-lg font-semibold text-red-100">
+            {attempt.heard || "Nada detectado"}
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
 
 function StatePill({ state }: { state: PracticeState }) {
   return (
-    <span className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-slate-950/60 px-3 py-2 font-mono text-xs text-slate-200">
+    <span className="inline-flex shrink-0 items-center gap-2 rounded-md border border-white/10 bg-slate-950/60 px-3 py-2 font-mono text-xs text-slate-200">
       <Clock className="size-4" />
       {state}
     </span>
@@ -581,8 +639,8 @@ function FeedbackMessage({ feedback }: { feedback: Feedback }) {
   if (feedback === "idle") return null;
   const copy = {
     correct: "Boa. Avancando automaticamente...",
-    wrong: "Quase. Ajuste e tente de novo.",
-    almost: "Bem perto. Fale com mais clareza.",
+    wrong: "Ainda nao foi dessa vez. Compare abaixo e tente novamente.",
+    almost: "Bem perto. Ajuste a frase olhando a comparacao.",
   }[feedback];
 
   return (
@@ -625,10 +683,41 @@ function useFeedbackSound() {
   };
 }
 
+function validateSpoken(
+  task: Task,
+  transcript: string,
+  revealed: boolean,
+  setResult: (feedback: Feedback) => void,
+  setAttempt: (attempt: LastAttempt | null) => void,
+  feedback: (correct: boolean) => void,
+  onSuccess: (task: Task, transcript: string, score: number, xpAward: number) => void,
+) {
+  const score = scoreAnswer(transcript, task);
+  const correct = score >= 0.82 || revealed;
+  setAttempt({ expected: task.expectedAnswer, heard: transcript });
+  setResult(correct ? "correct" : score >= 0.68 ? "almost" : "wrong");
+  feedback(correct);
+  if (correct) onSuccess(task, transcript, score, revealed ? 0 : 10);
+}
+
 function scoreAnswer(input: string, task: Task) {
   const candidates = [task.expectedAnswer, ...task.acceptableAnswers];
   if (candidates.some((answer) => answersMatch(input, answer))) return 1;
   return Math.max(...candidates.map((answer) => similarity(input, answer)));
+}
+
+function scenarioForTask(task: Task) {
+  if (task.type === TASK_TYPES.RAPID_FIRE) return "Bug Report";
+  if (task.type === TASK_TYPES.BLIND_DICTATION) return "Client Request";
+  if (task.type === TASK_TYPES.MOCK_INTERVIEW) return "Daily Stand-up";
+  return "Code Review";
+}
+
+function instructionForTask(task: Task) {
+  if (task.type === TASK_TYPES.RAPID_FIRE) return "Traduza para o ingles em 5s:";
+  if (task.type === TASK_TYPES.BLIND_DICTATION) return "Ouça e digite o que foi dito:";
+  if (task.type === TASK_TYPES.MOCK_INTERVIEW) return "Responda como se estivesse em uma daily:";
+  return "Ouça e repita a frase em ingles:";
 }
 
 function fireConfetti() {

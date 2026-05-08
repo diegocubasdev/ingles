@@ -60,6 +60,8 @@ export interface Task {
   type: TaskType;
   content: string;
   prompt: string;
+  contextScenario: string;
+  instructionText: string;
   expectedAnswer: string;
   acceptableAnswers: string[];
   words: string[];
