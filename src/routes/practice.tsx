@@ -1,78 +1,37 @@
 import { Link, useNavigate } from "@tanstack/react-router";
+import confetti from "canvas-confetti";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft,
-  Check,
-  HelpCircle,
+  CheckCircle2,
+  Clock,
   Keyboard,
-  Lightbulb,
   Loader2,
   Mic,
-  Play,
-  RotateCcw,
-  Trophy,
   Volume2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import useSound from "use-sound";
+import { ShareableAchievement } from "../components/ShareableAchievement";
+import { useAdvancedSpeech } from "../hooks/useAdvancedSpeech";
 import { useGamification } from "../hooks/useGamification";
-import { speakEnglish } from "../services/speechService";
+import { evaluateMockInterview } from "../services/taskGenerator";
 import {
   completeDay,
   completeTask,
   getCurrentStudyPlan,
   getTasksForDay,
 } from "../services/studyPlanService";
-import {
-  answersMatch,
-  normalizeAnswer,
-  similarity,
-} from "../services/textUtils";
+import { answersMatch, normalizeAnswer, similarity } from "../services/textUtils";
 import { getOrCreateUser } from "../services/userService";
-import { TASK_TYPES, type StudyPlan, type Task, type User } from "../types";
+import { TASK_TYPES, type PracticeState, type StudyPlan, type Task, type User } from "../types";
 
-type Feedback = "idle" | "correct" | "almost" | "wrong";
-type SpeechRecognitionConstructor = new () => SpeechRecognition;
+const DING =
+  "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
+const BUZZ =
+  "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=";
 
-interface SpeechRecognition extends EventTarget {
-  lang: string;
-  interimResults: boolean;
-  maxAlternatives: number;
-  start: () => void;
-  stop: () => void;
-  onresult: ((event: SpeechRecognitionEvent) => void) | null;
-  onerror: (() => void) | null;
-  onend: (() => void) | null;
-}
-
-interface SpeechRecognitionEvent {
-  results: SpeechRecognitionResultList;
-}
-
-interface SpeechRecognitionResultList {
-  readonly length: number;
-  item(index: number): SpeechRecognitionResult;
-  [index: number]: SpeechRecognitionResult;
-}
-
-interface SpeechRecognitionResult {
-  readonly isFinal: boolean;
-  readonly length: number;
-  item(index: number): SpeechRecognitionAlternative;
-  [index: number]: SpeechRecognitionAlternative;
-}
-
-interface SpeechRecognitionAlternative {
-  readonly transcript: string;
-  readonly confidence: number;
-}
-
-declare global {
-  interface Window {
-    SpeechRecognition?: SpeechRecognitionConstructor;
-    webkitSpeechRecognition?: SpeechRecognitionConstructor;
-    webkitAudioContext?: typeof AudioContext;
-  }
-}
+type Feedback = "idle" | "correct" | "wrong" | "almost";
 
 export function PracticePage() {
   const [user, setUser] = useState<User | null>(null);
@@ -81,21 +40,11 @@ export function PracticePage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [finishing, setFinishing] = useState(false);
-  const [completionModal, setCompletionModal] = useState<{
-    xpEarned: number;
-    streakDays: number;
-  } | null>(null);
+  const [completion, setCompletion] = useState<{ xp: number; streak: number } | null>(null);
   const navigate = useNavigate();
-  const { checkAndUpdateStreak, triggerSuccessConfetti } = useGamification(
-    user?.uid,
-  );
+  const { checkAndUpdateStreak } = useGamification(user?.uid);
 
-  useEffect(() => {
-    void loadPractice();
-  }, []);
-
-  async function loadPractice() {
+  const loadPractice = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -110,503 +59,373 @@ export function PracticePage() {
         return;
       }
 
-      const isPlanComplete =
-        currentPlan.completedDays.length >= currentPlan.totalDays;
       const day = Math.min(currentPlan.currentDay, currentPlan.totalDays);
-      const dayTasks = isPlanComplete
-        ? []
-        : await getTasksForDay(currentUser.uid, day);
+      const dayTasks = await getTasksForDay(currentUser.uid, day);
       setUser(currentUser);
       setStudyPlan(currentPlan);
-      setTasks(dayTasks);
+      setTasks(dayTasks.filter((task) => !task.completed));
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
           ? caughtError.message
-          : "Nao foi possivel carregar as tarefas.",
+          : "Nao foi possivel carregar a pratica.",
       );
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
-  async function handleTaskSuccess(task: Task, xpAward: number) {
+  useEffect(() => {
+    const id = window.setTimeout(() => void loadPractice(), 0);
+    return () => window.clearTimeout(id);
+  }, [loadPractice]);
+
+  async function handleSuccess(task: Task, transcript: string, score: number) {
     if (!user || !studyPlan) return;
 
-    await completeTask(user.uid, task, xpAward);
+    await completeTask(user.uid, task, 10, {
+      transcript,
+      score,
+      correct: true,
+    });
 
-    if (currentIndex < tasks.length - 1) {
-      setCurrentIndex((index) => index + 1);
-      return;
-    }
+    window.setTimeout(async () => {
+      if (currentIndex < tasks.length - 1) {
+        setCurrentIndex((index) => index + 1);
+        return;
+      }
 
-    setFinishing(true);
-    await completeDay(user.uid, studyPlan.currentDay, studyPlan.completedDays);
-    triggerSuccessConfetti();
-    const streakDays = await checkAndUpdateStreak();
-    const maxDayXp = tasks.length * 10;
-    const dayXp = Math.max(5, maxDayXp - 10 + xpAward);
-    setCompletionModal({ xpEarned: dayXp, streakDays });
-    setFinishing(false);
+      await completeDay(user.uid, studyPlan.currentDay, studyPlan.completedDays);
+      fireConfetti();
+      const streak = await checkAndUpdateStreak();
+      setCompletion({ xp: tasks.length * 10, streak });
+    }, 1500);
   }
 
-  function closeCompletionModal() {
-    setCompletionModal(null);
-    void navigate({ to: "/dashboard" });
+  if (loading) return <PracticeShell status="Carregando drills offline..." />;
+  if (error) return <PracticeShell status={error} />;
+
+  if (!studyPlan || tasks.length === 0) {
+    return (
+      <PracticeShell status="Nenhuma tarefa pendente para hoje.">
+        <Link className="mt-5 inline-flex rounded-lg bg-cyan-300 px-4 py-3 font-semibold text-slate-950" to="/dashboard">
+          Voltar ao dashboard
+        </Link>
+      </PracticeShell>
+    );
   }
 
   const currentTask = tasks[currentIndex];
-  const dayLabel = studyPlan
-    ? `Dia ${Math.min(studyPlan.currentDay, studyPlan.totalDays)}`
-    : "Pratica";
-
-  if (loading) return <PracticeShell status="Carregando tarefas do dia..." />;
-  if (error) return <PracticeShell status={error} />;
-
-  if (studyPlan && studyPlan.completedDays.length >= studyPlan.totalDays) {
-    return (
-      <PracticeShell status="Plano concluido. Seu roadmap chegou a 100%.">
-        <Link
-          to="/dashboard"
-          className="mt-5 inline-flex items-center justify-center rounded-lg bg-slate-950 px-4 py-3 text-sm font-semibold text-white dark:bg-white dark:text-slate-950"
-        >
-          Ver roadmap
-        </Link>
-      </PracticeShell>
-    );
-  }
-
-  if (!studyPlan || tasks.length === 0 || !currentTask) {
-    return (
-      <PracticeShell status="Nenhum plano ativo encontrado. Gere sua trilha no dashboard.">
-        <Link
-          to="/dashboard"
-          className="mt-5 inline-flex items-center justify-center rounded-lg bg-slate-950 px-4 py-3 text-sm font-semibold text-white dark:bg-white dark:text-slate-950"
-        >
-          Ir para o dashboard
-        </Link>
-      </PracticeShell>
-    );
-  }
 
   return (
-    <section className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[320px_1fr] lg:py-10">
-      <aside className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <Link
-          to="/dashboard"
-          className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300"
-        >
-          <ArrowLeft className="size-4" aria-hidden="true" />
-          Roadmap
-        </Link>
-        <h1 className="mt-5 text-3xl font-semibold tracking-normal text-slate-950 dark:text-white">
-          {dayLabel}
-        </h1>
-        <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-          {currentTask.theme}
-        </p>
-        <div className="mt-5 rounded-lg bg-emerald-50 p-4 text-sm text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200">
-          Complete a tarefa, use dica quando travar e avance no seu ritmo.
-        </div>
-        <div className="mt-6">
-          <div className="flex items-center justify-between text-sm font-medium text-slate-600 dark:text-slate-300">
-            <span>
-              Step {currentIndex + 1} of {tasks.length}
-            </span>
-            <span>
-              {Math.round(((currentIndex + 1) / tasks.length) * 100)}%
-            </span>
-          </div>
-          <div className="mt-2 h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+    <section className="min-h-[calc(100svh-73px)] bg-slate-950 px-4 py-5 text-white sm:px-6">
+      <div className="mx-auto grid max-w-6xl gap-5 lg:grid-cols-[300px_1fr]">
+        <aside className="rounded-lg border border-white/10 bg-white/10 p-5 backdrop-blur-md">
+          <Link to="/dashboard" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-300">
+            <ArrowLeft className="size-4" />
+            Dashboard
+          </Link>
+          <p className="mt-6 font-mono text-xs uppercase tracking-wide text-cyan-200">
+            Dia {studyPlan.currentDay}
+          </p>
+          <h1 className="mt-2 text-3xl font-semibold">{currentTask.theme}</h1>
+          <div className="mt-5 h-3 overflow-hidden rounded-full bg-slate-800">
             <div
-              className="h-full rounded-full bg-slate-950 transition-all dark:bg-white"
+              className="h-full rounded-full bg-cyan-300 transition-all"
               style={{ width: `${((currentIndex + 1) / tasks.length) * 100}%` }}
             />
           </div>
-        </div>
-      </aside>
+          <p className="mt-3 text-sm text-slate-300">
+            Drill {currentIndex + 1} de {tasks.length}
+          </p>
+        </aside>
 
-      <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
         <AnimatePresence mode="wait">
           <motion.div
             key={currentTask.id}
-            initial={{ opacity: 0, x: 24 }}
+            initial={{ opacity: 0, x: 32 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -24 }}
-            transition={{ duration: 0.2 }}
+            exit={{ opacity: 0, x: -32 }}
+            transition={{ duration: 0.24 }}
+            className="rounded-lg border border-white/10 bg-white/10 p-5 backdrop-blur-md"
           >
-            <TaskRunner
-              task={currentTask}
-              busy={finishing}
-              onSuccess={(xpAward) =>
-                void handleTaskSuccess(currentTask, xpAward)
-              }
-            />
+            <TaskRunner task={currentTask} onSuccess={handleSuccess} />
           </motion.div>
         </AnimatePresence>
       </div>
 
-      <DayCompleteModal
-        completion={completionModal}
-        onClose={closeCompletionModal}
-      />
+      {completion ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/80 p-4 backdrop-blur-md">
+          <div className="w-full max-w-sm rounded-lg border border-white/10 bg-white/10 p-5 text-center">
+            <CheckCircle2 className="mx-auto size-12 text-emerald-300" />
+            <h2 className="mt-4 text-2xl font-semibold">Dia concluido</h2>
+            <p className="mt-2 text-sm text-slate-300">
+              +{completion.xp} XP | Streak {completion.streak} dias
+            </p>
+            <div className="mt-5">
+              <ShareableAchievement
+                title="Dev English streak"
+                subtitle={`${completion.streak} dias praticando speaking`}
+                stat={`+${completion.xp} XP`}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => void navigate({ to: "/dashboard" })}
+              className="mt-5 w-full rounded-lg bg-cyan-300 px-4 py-3 font-semibold text-slate-950"
+            >
+              Voltar ao dashboard
+            </button>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
 
 function TaskRunner({
   task,
-  busy,
   onSuccess,
 }: {
   task: Task;
-  busy: boolean;
-  onSuccess: (xpAward: number) => void;
+  onSuccess: (task: Task, transcript: string, score: number) => void;
 }) {
-  if (task.type === TASK_TYPES.LISTENING)
-    return <ListeningTask task={task} busy={busy} onSuccess={onSuccess} />;
-  if (task.type === TASK_TYPES.PRONUNCIATION)
-    return <PronunciationTask task={task} busy={busy} onSuccess={onSuccess} />;
-  if (task.type === TASK_TYPES.BUILDING)
-    return <BuildingTask task={task} busy={busy} onSuccess={onSuccess} />;
-  if (task.type === TASK_TYPES.DAILY_STANDUP)
-    return <DailyStandupTask task={task} busy={busy} onSuccess={onSuccess} />;
-  if (task.type === TASK_TYPES.TECH_SHADOWING)
-    return <TechShadowingTask task={task} busy={busy} onSuccess={onSuccess} />;
-  if (task.type === TASK_TYPES.CODE_REVIEW_LISTENING)
-    return (
-      <CodeReviewListeningTask task={task} busy={busy} onSuccess={onSuccess} />
-    );
-  return <BuildingTask task={task} busy={busy} onSuccess={onSuccess} />;
+  if (task.type === TASK_TYPES.SHADOWING) {
+    return <ShadowingTask task={task} onSuccess={onSuccess} />;
+  }
+  if (task.type === TASK_TYPES.BLIND_DICTATION) {
+    return <BlindDictationTask task={task} onSuccess={onSuccess} />;
+  }
+  if (task.type === TASK_TYPES.RAPID_FIRE) {
+    return <RapidFireTask task={task} onSuccess={onSuccess} />;
+  }
+  return <MockInterviewTask task={task} onSuccess={onSuccess} />;
 }
 
-function ListeningTask({ task, busy, onSuccess }: TaskProps) {
-  const [answer, setAnswer] = useState("");
-  const [feedback, setFeedback] = useState<Feedback>("idle");
-  const [hintUsed, setHintUsed] = useState(false);
-  const [audioError, setAudioError] = useState<string | null>(null);
+function ShadowingTask({ task, onSuccess }: TaskProps) {
+  const speech = useAdvancedSpeech();
+  const feedback = useFeedbackSound();
+  const [result, setResult] = useState<Feedback>("idle");
 
-  function checkAnswer() {
-    const isCorrect = answersMatch(answer, task.expectedAnswer);
-    setFeedback(isCorrect ? "correct" : "wrong");
-    playFeedbackSound(isCorrect);
-    if (isCorrect) onSuccess(10);
+  async function record() {
+    const transcript = await speech.startRecording();
+    const score = scoreAnswer(transcript, task);
+    const correct = score >= 0.82;
+    setResult(correct ? "correct" : score >= 0.68 ? "almost" : "wrong");
+    feedback(correct);
+    if (correct) onSuccess(task, transcript, score);
   }
 
   return (
-    <TaskFrame
-      label="Escuta"
-      helper="Ouça primeiro. Depois digite ou responda falando."
-      prompt={task.prompt}
-      feedback={feedback}
-    >
-      <PrimaryListenButton
-        label="Ouvir frase"
-        onClick={() => {
-          setAudioError(null);
-          void speakEnglish(task.content, { onError: setAudioError });
-        }}
-      />
-      {audioError ? <AudioError message={audioError} /> : null}
-      <HintPanel
-        task={task}
-        hintUsed={hintUsed}
-        onUseHint={() => setHintUsed(true)}
-      />
-      <div className="mt-5 flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
-        <Keyboard className="size-4" aria-hidden="true" />
-        Sua resposta
-      </div>
+    <TaskFrame task={task} state={speech.state} feedback={result}>
+      <motion.button
+        whileTap={{ scale: 0.95 }}
+        type="button"
+        onClick={() => void speech.speak(task.content, 1)}
+        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-300 px-4 py-4 font-semibold text-slate-950 sm:w-auto"
+      >
+        <Volume2 className="size-5" />
+        Ouvir nativo
+      </motion.button>
+      <MicButton recording={speech.isRecording} onClick={() => void record()} />
+      <Transcript text={speech.transcript} />
+    </TaskFrame>
+  );
+}
+
+function BlindDictationTask({ task, onSuccess }: TaskProps) {
+  const speech = useAdvancedSpeech();
+  const feedback = useFeedbackSound();
+  const [answer, setAnswer] = useState("");
+  const [result, setResult] = useState<Feedback>("idle");
+
+  function validate() {
+    const score = scoreAnswer(answer, task);
+    const correct = score >= 0.82;
+    setResult(correct ? "correct" : "wrong");
+    feedback(correct);
+    if (correct) onSuccess(task, answer, score);
+  }
+
+  return (
+    <TaskFrame task={task} state={speech.state} feedback={result}>
+      <motion.button
+        whileTap={{ scale: 0.95 }}
+        type="button"
+        onClick={() => void speech.speak(task.content, 1.25)}
+        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-300 px-4 py-4 font-semibold text-slate-950 sm:w-auto"
+      >
+        <Volume2 className="size-5" />
+        Ouvir rapido
+      </motion.button>
+      <label className="mt-5 flex items-center gap-2 text-sm font-semibold text-slate-300">
+        <Keyboard className="size-4" />
+        Digite o que ouviu
+      </label>
       <input
         value={answer}
         onChange={(event) => setAnswer(event.target.value)}
-        placeholder="Digite o que ouviu ou a resposta"
-        className="mt-5 w-full rounded-lg border border-slate-300 bg-white px-4 py-4 text-slate-950 outline-none focus:border-slate-950 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-white"
+        className="mt-3 w-full rounded-lg border border-white/10 bg-slate-950/70 px-4 py-4 text-white outline-none focus:border-cyan-300"
       />
-      <SpeechAnswerButton
-        onTranscript={(transcript) => {
-          setAnswer(transcript);
-          const isCorrect = answersMatch(transcript, task.expectedAnswer);
-          setFeedback(isCorrect ? "correct" : "wrong");
-          playFeedbackSound(isCorrect);
-          if (isCorrect) onSuccess(10);
-        }}
-      />
-      <ActionBar
-        busy={busy}
-        canCheck={answer.trim().length > 0}
-        onCheck={checkAnswer}
-      />
+      <DiffFeedback input={answer} expected={task.expectedAnswer} />
+      <ActionButton disabled={!answer.trim()} onClick={validate}>
+        Validar localmente
+      </ActionButton>
     </TaskFrame>
   );
 }
 
-function PronunciationTask({ task, busy, onSuccess }: TaskProps) {
-  const [recognizedText, setRecognizedText] = useState("");
-  const [listening, setListening] = useState(false);
-  const [feedback, setFeedback] = useState<Feedback>("idle");
-  const [hintUsed, setHintUsed] = useState(false);
-  const [audioError, setAudioError] = useState<string | null>(null);
-  const SpeechRecognitionApi =
-    window.SpeechRecognition ?? window.webkitSpeechRecognition;
-  const isSupported = Boolean(SpeechRecognitionApi);
+function RapidFireTask({ task, onSuccess }: TaskProps) {
+  const speech = useAdvancedSpeech();
+  const feedback = useFeedbackSound();
+  const [seconds, setSeconds] = useState(5);
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<Feedback>("idle");
 
-  function startRecording() {
-    if (!SpeechRecognitionApi) return;
+  useEffect(() => {
+    if (!running || seconds <= 0) return;
+    const id = window.setTimeout(() => {
+      setSeconds((value) => {
+        if (value <= 1) {
+          setRunning(false);
+          feedback(false);
+          setResult("wrong");
+          return 0;
+        }
+        return value - 1;
+      });
+    }, 1000);
+    return () => window.clearTimeout(id);
+  }, [feedback, running, seconds]);
 
-    const recognition = new SpeechRecognitionApi();
-    recognition.lang = "en-US";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      const score = similarity(transcript, task.expectedAnswer);
-      const isCorrect = score >= 0.82;
-      setRecognizedText(transcript);
-      setFeedback(isCorrect ? "correct" : score >= 0.68 ? "almost" : "wrong");
-      playFeedbackSound(isCorrect);
-      if (isCorrect) onSuccess(10);
-    };
-    recognition.onerror = () => {
-      setFeedback("wrong");
-      playFeedbackSound(false);
-      setListening(false);
-    };
-    recognition.onend = () => setListening(false);
-    setListening(true);
-    recognition.start();
+  async function start() {
+    setSeconds(5);
+    setRunning(true);
+    const transcript = await speech.startRecording(5);
+    setRunning(false);
+    const score = scoreAnswer(transcript, task);
+    const correct = score >= 0.78;
+    setResult(correct ? "correct" : "wrong");
+    feedback(correct);
+    if (correct) onSuccess(task, transcript, score);
   }
 
   return (
-    <TaskFrame
-      label="Pronúncia"
-      helper="Ouça o modelo e grave sua voz quando estiver pronto."
-      prompt={task.prompt}
-      feedback={feedback}
-    >
-      <HintPanel
-        task={task}
-        hintUsed={hintUsed}
-        onUseHint={() => setHintUsed(true)}
-      />
-      <div className="rounded-lg bg-slate-50 p-5 text-2xl font-semibold leading-snug text-slate-950 dark:bg-slate-950 dark:text-white">
-        {task.expectedAnswer}
+    <TaskFrame task={task} state={speech.state} feedback={result}>
+      <div className="rounded-lg border border-white/10 bg-slate-950/60 p-5">
+        <p className="text-sm text-slate-400">Diga em ingles:</p>
+        <p className="mt-2 text-2xl font-semibold">{task.content}</p>
       </div>
-      <PrimaryListenButton
-        label="Ouvir modelo"
-        variant="secondary"
-        onClick={() => {
-          setAudioError(null);
-          void speakEnglish(task.expectedAnswer, { onError: setAudioError });
-        }}
-      />
-      {audioError ? <AudioError message={audioError} /> : null}
-      {isSupported ? (
-        <button
-          type="button"
-          onClick={startRecording}
-          disabled={listening || busy}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-4 font-semibold text-white hover:bg-emerald-500 disabled:opacity-60 sm:w-auto"
-        >
-          {listening ? (
-            <Loader2 className="size-5 animate-spin" />
-          ) : (
-            <Mic className="size-5" />
-          )}
-          {listening ? "Ouvindo..." : "Gravar audio"}
-        </button>
-      ) : (
-        <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Reconhecimento de fala indisponivel neste navegador.
-        </div>
-      )}
-      {recognizedText ? (
-        <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">
-          Reconhecido:{" "}
-          <span className="font-semibold text-slate-950 dark:text-white">
-            {recognizedText}
-          </span>
-        </p>
-      ) : null}
-    </TaskFrame>
-  );
-}
-
-function BuildingTask({ task, busy, onSuccess }: TaskProps) {
-  const initialWords = useMemo(
-    () => task.words.map((word, index) => ({ id: `${word}-${index}`, word })),
-    [task.words],
-  );
-  const [available, setAvailable] = useState(initialWords);
-  const [selected, setSelected] = useState<typeof initialWords>([]);
-  const [feedback, setFeedback] = useState<Feedback>("idle");
-  const [hintUsed, setHintUsed] = useState(false);
-  const [audioError, setAudioError] = useState<string | null>(null);
-  const firstExpectedWord = normalizeAnswer(task.expectedAnswer).split(" ")[0];
-
-  function chooseWord(id: string) {
-    const word = available.find((item) => item.id === id);
-    if (!word) return;
-    setAvailable((items) => items.filter((item) => item.id !== id));
-    setSelected((items) => [...items, word]);
-    setFeedback("idle");
-  }
-
-  function removeWord(id: string) {
-    const word = selected.find((item) => item.id === id);
-    if (!word) return;
-    setSelected((items) => items.filter((item) => item.id !== id));
-    setAvailable((items) => [...items, word]);
-    setFeedback("idle");
-  }
-
-  function reset() {
-    setAvailable(initialWords);
-    setSelected([]);
-    setFeedback("idle");
-  }
-
-  function checkAnswer() {
-    const sentence = selected.map((item) => item.word).join(" ");
-    const isCorrect = answersMatch(sentence, task.expectedAnswer);
-    setFeedback(isCorrect ? "correct" : "wrong");
-    playFeedbackSound(isCorrect);
-    if (isCorrect) onSuccess(10);
-  }
-
-  return (
-    <TaskFrame
-      label="Montagem"
-      helper="Toque nas palavras na ordem correta para formar a frase."
-      prompt={task.content}
-      feedback={feedback}
-    >
-      <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
-        {task.prompt}
-      </p>
-      <HintPanel
-        task={task}
-        hintUsed={hintUsed}
-        onUseHint={() => setHintUsed(true)}
-      />
-      <div className="mt-5 flex items-center justify-between gap-3">
-        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-          Frase montada
-        </p>
-        <span className="text-xs font-medium text-slate-500">
-          toque para remover
+      <div className="mt-5 flex items-center gap-3">
+        <span className="grid size-14 place-items-center rounded-full border border-cyan-300 font-mono text-xl text-cyan-200">
+          {seconds}
         </span>
+        <MicButton recording={speech.isRecording} onClick={() => void start()} />
       </div>
-      <div className="mt-4 min-h-24 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-950">
-        <div className="flex flex-wrap gap-2">
-          {selected.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => removeWord(item.id)}
-              className="rounded-md bg-slate-950 px-3 py-2 text-sm font-semibold text-white dark:bg-white dark:text-slate-950"
-            >
-              {item.word}
-            </button>
-          ))}
+      <Transcript text={speech.transcript} />
+    </TaskFrame>
+  );
+}
+
+function MockInterviewTask({ task, onSuccess }: TaskProps) {
+  const questions = useMemo(
+    () =>
+      task.interviewQuestions?.length === 3
+        ? task.interviewQuestions
+        : [
+            "What did you work on yesterday?",
+            "What will you focus on today?",
+            "Do you have any blockers?",
+          ],
+    [task.interviewQuestions],
+  );
+  const speech = useAdvancedSpeech();
+  const feedback = useFeedbackSound();
+  const [answers, setAnswers] = useState<string[]>([]);
+  const [aiFeedback, setAiFeedback] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<Feedback>("idle");
+  const currentQuestion = questions[answers.length];
+
+  async function answerQuestion() {
+    const transcript = await speech.startRecording(20);
+    setAnswers((items) => [...items, transcript]);
+  }
+
+  async function finish() {
+    setLoading(true);
+    try {
+      const response = await evaluateMockInterview(answers);
+      setAiFeedback(response);
+      setResult("correct");
+      feedback(true);
+      onSuccess(task, answers.join(" "), 1);
+    } catch (error) {
+      setAiFeedback(error instanceof Error ? error.message : "Feedback indisponivel.");
+      setResult("almost");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <TaskFrame task={task} state={loading ? "validating" : speech.state} feedback={result}>
+      {currentQuestion ? (
+        <>
+          <div className="rounded-lg border border-white/10 bg-slate-950/60 p-5">
+            <p className="text-sm text-slate-400">Pergunta {answers.length + 1}/3</p>
+            <p className="mt-2 text-2xl font-semibold">{currentQuestion}</p>
+          </div>
+          <MicButton recording={speech.isRecording} onClick={() => void answerQuestion()} />
+        </>
+      ) : (
+        <ActionButton disabled={loading} onClick={() => void finish()}>
+          {loading ? "Avaliando em 1 request..." : "Enviar feedback final"}
+        </ActionButton>
+      )}
+      <div className="mt-5 space-y-2">
+        {answers.map((answer, index) => (
+          <p key={index} className="rounded-lg bg-slate-950/60 p-3 text-sm text-slate-300">
+            {index + 1}. {answer || "Sem fala detectada"}
+          </p>
+        ))}
+      </div>
+      {aiFeedback ? (
+        <div className="mt-5 whitespace-pre-line rounded-lg border border-emerald-300/30 bg-emerald-400/10 p-4 text-sm text-emerald-100">
+          {aiFeedback}
         </div>
-      </div>
-      <p className="mt-5 text-sm font-semibold text-slate-700 dark:text-slate-200">
-        Palavras disponíveis
-      </p>
-      <div className="mt-5 flex flex-wrap gap-2">
-        {available.map((item) => {
-          const shouldHighlight =
-            hintUsed && normalizeAnswer(item.word) === firstExpectedWord;
-          return (
-            <motion.button
-              key={item.id}
-              type="button"
-              animate={
-                shouldHighlight
-                  ? { scale: [1, 1.08, 1], borderColor: "#f59e0b" }
-                  : { scale: 1 }
-              }
-              transition={{
-                duration: 0.8,
-                repeat: shouldHighlight ? Infinity : 0,
-              }}
-              onClick={() => chooseWord(item.id)}
-              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:border-slate-950 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-white"
-            >
-              {item.word}
-            </motion.button>
-          );
-        })}
-      </div>
-      <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-        <PrimaryListenButton
-          label="Ouvir frase"
-          compact
-          variant="secondary"
-          onClick={() => {
-            setAudioError(null);
-            void speakEnglish(task.expectedAnswer, { onError: setAudioError });
-          }}
-        />
-        <SpeechAnswerButton
-          compact
-          onTranscript={(transcript) => {
-            const isCorrect = answersMatch(transcript, task.expectedAnswer);
-            setFeedback(isCorrect ? "correct" : "wrong");
-            playFeedbackSound(isCorrect);
-            if (isCorrect) onSuccess(10);
-          }}
-        />
-      </div>
-      {audioError ? <AudioError message={audioError} /> : null}
-      <ActionBar
-        busy={busy}
-        canCheck={selected.length > 0}
-        onCheck={checkAnswer}
-        onReset={reset}
-      />
+      ) : null}
     </TaskFrame>
   );
 }
 
 interface TaskProps {
   task: Task;
-  busy: boolean;
-  onSuccess: (xpAward: number) => void;
+  onSuccess: (task: Task, transcript: string, score: number) => void;
 }
 
 function TaskFrame({
-  label,
-  helper,
-  prompt,
+  task,
+  state,
   feedback,
   children,
 }: {
-  label: string;
-  helper: string;
-  prompt: string;
+  task: Task;
+  state: PracticeState;
   feedback: Feedback;
   children: React.ReactNode;
 }) {
   return (
     <div>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <span className="inline-flex rounded-md bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-950 dark:text-slate-300">
-            {label}
-          </span>
-          <h2 className="mt-4 text-2xl font-semibold tracking-normal text-slate-950 dark:text-white sm:text-3xl">
-            {prompt}
-          </h2>
-          <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
-            {helper}
+          <p className="font-mono text-xs uppercase tracking-wide text-cyan-200">
+            {task.type.replace("_", " ")}
           </p>
-          <MiniTip />
+          <h2 className="mt-3 text-3xl font-semibold tracking-normal">{task.prompt}</h2>
+          <p className="mt-3 text-sm leading-6 text-slate-300">{task.hints?.[0]}</p>
         </div>
-        <span className="inline-flex shrink-0 items-center justify-center rounded-lg bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200">
-          +10 XP
-        </span>
+        <StatePill state={state} />
       </div>
       <div className="mt-6">{children}</div>
       <FeedbackMessage feedback={feedback} />
@@ -614,506 +433,110 @@ function TaskFrame({
   );
 }
 
-function HintPanel({
-  task,
-  hintUsed,
-  onUseHint,
-}: {
-  task: Task;
-  hintUsed: boolean;
-  onUseHint: () => void;
-}) {
-  const hasHints = Boolean(task.hints?.length);
-  const hasParts = Boolean(task.sentenceParts?.length);
-  const translation =
-    task.translation || "Traducao indisponivel para esta tarefa antiga.";
-
-  return (
-    <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-      <button
-        type="button"
-        onClick={onUseHint}
-        disabled={hintUsed}
-        className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 disabled:opacity-70 dark:text-slate-200"
-      >
-        <Lightbulb className="size-4 text-amber-500" aria-hidden="true" />
-        {hintUsed ? "Dica aberta" : "Estou travado, mostrar dica"}
-      </button>
-
-      {hintUsed ? (
-        <div className="mt-4 space-y-3">
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-            <p className="font-semibold">Resposta:</p>
-            <p className="mt-1">{task.expectedAnswer}</p>
-            <button
-              type="button"
-              onClick={() => void speakEnglish(task.expectedAnswer)}
-              className="mt-3 inline-flex items-center gap-2 rounded-md bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-200 dark:bg-amber-400/20 dark:text-amber-100"
-            >
-              <Volume2 className="size-4" aria-hidden="true" />
-              Ouvir como se fala
-            </button>
-          </div>
-
-          {task.type !== TASK_TYPES.BUILDING ? (
-            <p className="rounded-lg bg-white/70 p-3 text-sm text-slate-600 dark:bg-slate-900/70 dark:text-slate-300">
-              {translation}
-            </p>
-          ) : (
-            <p className="rounded-lg bg-white/70 p-3 text-sm text-slate-600 dark:bg-slate-900/70 dark:text-slate-300">
-              Primeira palavra:{" "}
-              <span className="font-semibold">
-                {task.expectedAnswer.split(/\s+/)[0]}
-              </span>
-            </p>
-          )}
-
-          {hasParts ? (
-            <div className="flex flex-wrap gap-2">
-              {task.sentenceParts?.map((part, index) => (
-                <span
-                  key={`${part}-${index}`}
-                  className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-                >
-                  {part}
-                </span>
-              ))}
-            </div>
-          ) : null}
-
-          {hasHints ? (
-            <ul className="space-y-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-              {task.hints?.map((hint, index) => (
-                <li key={`${hint}-${index}`}>{hint}</li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function AudioError({ message }: { message: string }) {
-  return (
-    <p className="mt-3 text-sm font-medium text-red-700 dark:text-red-300">
-      {message}
-    </p>
-  );
-}
-
-function SpeechAnswerButton({
-  onTranscript,
-  compact,
-}: {
-  onTranscript: (transcript: string) => void;
-  compact?: boolean;
-}) {
-  const [listening, setListening] = useState(false);
-  const SpeechRecognitionApi =
-    window.SpeechRecognition ?? window.webkitSpeechRecognition;
-
-  if (!SpeechRecognitionApi) return null;
-
-  function startRecording() {
-    if (!SpeechRecognitionApi) return;
-
-    const recognition = new SpeechRecognitionApi();
-    recognition.lang = "en-US";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.onresult = (event) =>
-      onTranscript(event.results[0][0].transcript);
-    recognition.onerror = () => setListening(false);
-    recognition.onend = () => setListening(false);
-    setListening(true);
-    recognition.start();
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={startRecording}
-      disabled={listening}
-      className={[
-        "inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 text-sm font-semibold text-slate-700 hover:border-slate-950 disabled:opacity-60 dark:border-slate-700 dark:text-slate-200 dark:hover:border-white",
-        compact ? "px-4 py-3" : "mt-3 w-full px-4 py-4 sm:w-auto",
-      ].join(" ")}
-    >
-      {listening ? (
-        <Loader2 className="size-4 animate-spin" />
-      ) : (
-        <Mic className="size-4" />
-      )}
-      {listening ? "Ouvindo..." : "Responder falando"}
-    </button>
-  );
-}
-
-function DailyStandupTask({ task, busy, onSuccess }: TaskProps) {
-  const [timeLeft, setTimeLeft] = useState(60);
-  const [isRecording, setIsRecording] = useState(false);
-  const [transcript, setTranscript] = useState("");
-  const [feedback, setFeedback] = useState<Feedback>("idle");
-  const SpeechRecognitionApi =
-    window.SpeechRecognition ?? window.webkitSpeechRecognition;
-
-  useEffect(() => {
-    if (timeLeft > 0 && isRecording) {
-      const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
-      return () => clearTimeout(timer);
-    } else if (timeLeft === 0 && isRecording) {
-      stopRecording();
-    }
-  }, [timeLeft, isRecording]);
-
-  function startRecording() {
-    if (!SpeechRecognitionApi) return;
-    const recognition = new SpeechRecognitionApi();
-    recognition.lang = "en-US";
-    recognition.interimResults = true;
-    recognition.onresult = (event) => {
-      let finalTranscript = "";
-      for (let i = 0; i < event.results.length; i++) {
-        if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript;
-        }
-      }
-      setTranscript(finalTranscript);
-    };
-    recognition.onend = () => {
-      setIsRecording(false);
-      evaluateTranscript();
-    };
-    setIsRecording(true);
-    setTimeLeft(60);
-    recognition.start();
-  }
-
-  function stopRecording() {
-    setIsRecording(false);
-  }
-
-  function evaluateTranscript() {
-    // Simple evaluation: check if key points are mentioned
-    const keyPoints = task.expectedAnswer.toLowerCase().split(",");
-    const transcriptLower = transcript.toLowerCase();
-    const covered = keyPoints.filter((point) =>
-      transcriptLower.includes(point.trim()),
-    ).length;
-    const score = covered / keyPoints.length;
-    const isCorrect = score >= 0.7;
-    setFeedback(isCorrect ? "correct" : "wrong");
-    playFeedbackSound(isCorrect);
-    if (isCorrect) onSuccess(10);
-  }
-
-  return (
-    <TaskFrame
-      label="Daily Stand-up"
-      helper="Explique seu update em 60 segundos sob pressão."
-      prompt={task.prompt}
-      feedback={feedback}
-    >
-      <div className="rounded-lg bg-indigo-50 p-5 text-sm text-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-200">
-        <p className="font-semibold">Contexto:</p>
-        <p>{task.content}</p>
-      </div>
-      <div className="mt-5 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-4xl font-bold text-slate-950 dark:text-white">
-            {timeLeft}s
-          </div>
-          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-            Tempo restante
-          </p>
-        </div>
-      </div>
-      <button
-        type="button"
-        onClick={isRecording ? stopRecording : startRecording}
-        disabled={busy}
-        className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-4 font-semibold text-white hover:bg-red-500 disabled:opacity-60"
-      >
-        {isRecording ? (
-          <Loader2 className="size-5 animate-spin" />
-        ) : (
-          <Mic className="size-5" />
-        )}
-        {isRecording ? "Parar Gravação" : "Iniciar Stand-up"}
-      </button>
-      {transcript && (
-        <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">
-          Transcrição: <span className="font-semibold">{transcript}</span>
-        </p>
-      )}
-    </TaskFrame>
-  );
-}
-
-function TechShadowingTask({ task, busy, onSuccess }: TaskProps) {
-  const [speed, setSpeed] = useState(1.0);
-  const [recognizedText, setRecognizedText] = useState("");
-  const [feedback, setFeedback] = useState<Feedback>("idle");
-  const [listening, setListening] = useState(false);
-  const SpeechRecognitionApi =
-    window.SpeechRecognition ?? window.webkitSpeechRecognition;
-
-  function playPhrase() {
-    void speakEnglish(task.content, { rate: speed });
-  }
-
-  function startRecording() {
-    if (!SpeechRecognitionApi) return;
-    const recognition = new SpeechRecognitionApi();
-    recognition.lang = "en-US";
-    recognition.interimResults = false;
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      setRecognizedText(transcript);
-      // Check if key words are present
-      const keyWords = task.words;
-      const transcriptLower = transcript.toLowerCase();
-      const matched = keyWords.filter((word) =>
-        transcriptLower.includes(word.toLowerCase()),
-      ).length;
-      const isCorrect = matched >= keyWords.length * 0.8;
-      setFeedback(isCorrect ? "correct" : "wrong");
-      playFeedbackSound(isCorrect);
-      if (isCorrect) onSuccess(10);
-    };
-    recognition.onend = () => setListening(false);
-    setListening(true);
-    recognition.start();
-  }
-
-  return (
-    <TaskFrame
-      label="Tech Shadowing"
-      helper="Ouça a frase técnica e repita com velocidade."
-      prompt={task.prompt}
-      feedback={feedback}
-    >
-      <div className="rounded-lg bg-slate-50 p-5 text-lg font-semibold text-slate-950 dark:bg-slate-950 dark:text-white">
-        {task.content}
-      </div>
-      <div className="mt-4 flex gap-2">
-        {[1.0, 1.25, 1.5].map((rate) => (
-          <button
-            key={rate}
-            type="button"
-            onClick={() => setSpeed(rate)}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold ${
-              speed === rate
-                ? "bg-indigo-600 text-white"
-                : "border border-slate-300 text-slate-700 hover:border-slate-950 dark:border-slate-700 dark:text-slate-200"
-            }`}
-          >
-            {rate}x
-          </button>
-        ))}
-      </div>
-      <PrimaryListenButton label="Ouvir frase" onClick={playPhrase} />
-      <button
-        type="button"
-        onClick={startRecording}
-        disabled={listening || busy}
-        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-4 font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
-      >
-        {listening ? (
-          <Loader2 className="size-5 animate-spin" />
-        ) : (
-          <Mic className="size-5" />
-        )}
-        {listening ? "Ouvindo..." : "Repetir frase"}
-      </button>
-      {recognizedText && (
-        <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">
-          Reconhecido: <span className="font-semibold">{recognizedText}</span>
-        </p>
-      )}
-    </TaskFrame>
-  );
-}
-
-function CodeReviewListeningTask({ task, busy, onSuccess }: TaskProps) {
-  const [summary, setSummary] = useState("");
-  const [feedback, setFeedback] = useState<Feedback>("idle");
-
-  function playReview() {
-    void speakEnglish(task.content, { rate: 1.2 }); // Faster for natural rhythm
-  }
-
-  function checkSummary() {
-    // Simple check: if summary includes key points
-    const expectedLower = task.expectedAnswer.toLowerCase();
-    const summaryLower = summary.toLowerCase();
-    const isCorrect = expectedLower
-      .split(" ")
-      .some((word) => summaryLower.includes(word));
-    setFeedback(isCorrect ? "correct" : "wrong");
-    playFeedbackSound(isCorrect);
-    if (isCorrect) onSuccess(10);
-  }
-
-  return (
-    <TaskFrame
-      label="Code Review Listening"
-      helper="Ouça o feedback e resuma as instruções."
-      prompt={task.prompt}
-      feedback={feedback}
-    >
-      <PrimaryListenButton label="Ouvir feedback" onClick={playReview} />
-      <textarea
-        value={summary}
-        onChange={(e) => setSummary(e.target.value)}
-        placeholder="Resuma o que o revisor pediu..."
-        className="mt-5 w-full rounded-lg border border-slate-300 bg-white px-4 py-4 text-slate-950 outline-none focus:border-slate-950 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-white"
-        rows={4}
-      />
-      <ActionBar
-        busy={busy}
-        canCheck={summary.trim().length > 0}
-        onCheck={checkSummary}
-      />
-    </TaskFrame>
-  );
-}
-
-function PrimaryListenButton({
-  label,
+function MicButton({
+  recording,
   onClick,
-  variant = "primary",
-  compact,
 }: {
-  label: string;
+  recording: boolean;
   onClick: () => void;
-  variant?: "primary" | "secondary";
-  compact?: boolean;
 }) {
-  const className =
-    variant === "primary"
-      ? "bg-slate-950 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
-      : "border border-slate-300 text-slate-700 hover:border-slate-950 dark:border-slate-700 dark:text-slate-200 dark:hover:border-white";
-
   return (
-    <button
+    <motion.button
       type="button"
+      whileTap={{ scale: 0.95 }}
+      animate={recording ? { scale: [1, 1.08, 1] } : { scale: 1 }}
+      transition={recording ? { repeat: Infinity, duration: 0.8 } : undefined}
       onClick={onClick}
-      className={[
-        "inline-flex items-center justify-center gap-2 rounded-lg px-4 font-semibold",
-        compact ? "py-3 text-sm" : "w-full py-4 sm:w-auto",
-        className,
-      ].join(" ")}
+      className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-400 px-4 py-4 font-semibold text-slate-950 sm:w-auto"
     >
-      <Volume2 className={compact ? "size-4" : "size-5"} aria-hidden="true" />
-      {label}
-    </button>
+      <Mic className="size-5" />
+      {recording ? "Gravando..." : "Gravar resposta"}
+    </motion.button>
   );
 }
 
-function ActionBar({
-  busy,
-  canCheck,
-  onCheck,
-  onReset,
+function ActionButton({
+  disabled,
+  onClick,
+  children,
 }: {
-  busy: boolean;
-  canCheck: boolean;
-  onCheck: () => void;
-  onReset?: () => void;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="sticky bottom-0 -mx-4 mt-6 border-t border-slate-200 bg-white/95 p-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0 sm:dark:bg-transparent">
-      <div className="flex flex-col-reverse gap-3 sm:flex-row">
-        {onReset ? (
-          <button
-            type="button"
-            onClick={onReset}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 hover:border-slate-950 dark:border-slate-700 dark:text-slate-200 dark:hover:border-white"
+    <motion.button
+      type="button"
+      whileTap={{ scale: 0.95 }}
+      disabled={disabled}
+      onClick={onClick}
+      className="mt-5 inline-flex w-full items-center justify-center rounded-lg bg-cyan-300 px-4 py-4 font-semibold text-slate-950 disabled:opacity-50 sm:w-auto"
+    >
+      {children}
+    </motion.button>
+  );
+}
+
+function DiffFeedback({ input, expected }: { input: string; expected: string }) {
+  if (!input.trim()) return null;
+  const inputWords = normalizeAnswer(input).split(" ");
+  const expectedWords = normalizeAnswer(expected).split(" ");
+
+  return (
+    <div className="mt-4 flex flex-wrap gap-2">
+      {expectedWords.map((word, index) => {
+        const ok = inputWords[index] === word;
+        return (
+          <span
+            key={`${word}-${index}`}
+            className={[
+              "rounded-md px-2 py-1 text-sm",
+              ok
+                ? "bg-emerald-400/15 text-emerald-200"
+                : "bg-red-400/15 text-red-200 line-through",
+            ].join(" ")}
           >
-            <RotateCcw className="size-4" aria-hidden="true" />
-            Refazer
-          </button>
-        ) : null}
-        <button
-          type="button"
-          onClick={onCheck}
-          disabled={busy || !canCheck}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-4 font-semibold text-white hover:bg-emerald-500 disabled:opacity-60 sm:w-auto sm:px-6"
-        >
-          {busy ? (
-            <Loader2 className="size-5 animate-spin" />
-          ) : (
-            <Check className="size-5" />
-          )}
-          Conferir e avançar
-        </button>
-      </div>
+            {word}
+          </span>
+        );
+      })}
     </div>
   );
+}
+
+function StatePill({ state }: { state: PracticeState }) {
+  return (
+    <span className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-slate-950/60 px-3 py-2 font-mono text-xs text-slate-200">
+      <Clock className="size-4" />
+      {state}
+    </span>
+  );
+}
+
+function Transcript({ text }: { text: string }) {
+  return text ? (
+    <p className="mt-4 rounded-lg bg-slate-950/60 p-3 text-sm text-slate-300">
+      Reconhecido: <span className="font-semibold text-white">{text}</span>
+    </p>
+  ) : null;
 }
 
 function FeedbackMessage({ feedback }: { feedback: Feedback }) {
   if (feedback === "idle") return null;
-
-  const styles = {
-    correct: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    almost: "border-amber-200 bg-amber-50 text-amber-800",
-    wrong: "border-red-200 bg-red-50 text-red-700",
-  };
-
-  const messages = {
-    correct: "Boa. Resposta aceita.",
-    almost: "Quase la. Tente falar um pouco mais claro.",
-    wrong: "Ainda nao. Revise e tente novamente.",
-  };
+  const copy = {
+    correct: "Boa. Avancando automaticamente...",
+    wrong: "Quase. Ajuste e tente de novo.",
+    almost: "Bem perto. Fale com mais clareza.",
+  }[feedback];
 
   return (
-    <div
-      className={`mt-5 rounded-lg border px-4 py-3 text-sm font-medium ${styles[feedback]}`}
+    <motion.p
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mt-5 rounded-lg border border-white/10 bg-white/10 p-4 text-sm text-slate-100"
     >
-      {messages[feedback]}
-    </div>
-  );
-}
-
-function DayCompleteModal({
-  completion,
-  onClose,
-}: {
-  completion: { xpEarned: number; streakDays: number } | null;
-  onClose: () => void;
-}) {
-  if (!completion) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 px-4 backdrop-blur-sm">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.94, y: 16 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 text-center shadow-xl dark:border-slate-800 dark:bg-slate-900"
-      >
-        <div className="mx-auto grid size-14 place-items-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10">
-          <Trophy className="size-7" aria-hidden="true" />
-        </div>
-        <h2 className="mt-5 text-2xl font-semibold tracking-normal text-slate-950 dark:text-white">
-          Dia concluido
-        </h2>
-        <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
-          Excelente ritmo. Voce ganhou {completion.xpEarned} XP hoje e sua
-          ofensiva esta em {completion.streakDays}{" "}
-          {completion.streakDays === 1 ? "dia" : "dias"}.
-        </p>
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-6 inline-flex w-full items-center justify-center rounded-lg bg-slate-950 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
-        >
-          Voltar ao dashboard
-        </button>
-      </motion.div>
-    </div>
+      {copy}
+    </motion.p>
   );
 }
 
@@ -1125,53 +548,38 @@ function PracticeShell({
   children?: React.ReactNode;
 }) {
   return (
-    <section className="mx-auto flex min-h-[70svh] w-full max-w-3xl items-center justify-center px-4">
-      <div className="rounded-lg border border-slate-200 bg-white p-6 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <Play className="mx-auto size-8 text-slate-500" aria-hidden="true" />
-        <p className="mt-4 text-sm font-medium text-slate-700 dark:text-slate-200">
-          {status}
-        </p>
+    <section className="grid min-h-[calc(100svh-73px)] place-items-center bg-slate-950 px-4 text-white">
+      <div className="rounded-lg border border-white/10 bg-white/10 p-6 text-center backdrop-blur-md">
+        <Loader2 className="mx-auto size-7 animate-spin text-cyan-200" />
+        <p className="mt-4 text-sm text-slate-200">{status}</p>
         {children}
       </div>
     </section>
   );
 }
 
-function MiniTip() {
-  return (
-    <div className="mt-4 inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600 dark:bg-slate-950 dark:text-slate-300">
-      <HelpCircle className="size-4" aria-hidden="true" />
-      Use os botões de áudio e dica sempre que precisar.
-    </div>
-  );
+function useFeedbackSound() {
+  const [playDing] = useSound(DING, { volume: 0.45 });
+  const [playBuzz] = useSound(BUZZ, { volume: 0.35 });
+
+  return (correct: boolean) => {
+    navigator.vibrate?.(correct ? [50] : [30, 40, 30]);
+    if (correct) playDing();
+    else playBuzz();
+  };
 }
 
-function playFeedbackSound(isCorrect: boolean) {
-  const AudioContextClass = window.AudioContext ?? window.webkitAudioContext;
-  if (!AudioContextClass) return;
+function scoreAnswer(input: string, task: Task) {
+  const candidates = [task.expectedAnswer, ...task.acceptableAnswers];
+  if (candidates.some((answer) => answersMatch(input, answer))) return 1;
+  return Math.max(...candidates.map((answer) => similarity(input, answer)));
+}
 
-  const audioContext = new AudioContextClass();
-  const oscillator = audioContext.createOscillator();
-  const gain = audioContext.createGain();
-
-  oscillator.type = isCorrect ? "sine" : "sawtooth";
-  oscillator.frequency.setValueAtTime(
-    isCorrect ? 880 : 160,
-    audioContext.currentTime,
-  );
-  oscillator.frequency.exponentialRampToValueAtTime(
-    isCorrect ? 1320 : 90,
-    audioContext.currentTime + 0.12,
-  );
-  gain.gain.setValueAtTime(0.001, audioContext.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.12, audioContext.currentTime + 0.02);
-  gain.gain.exponentialRampToValueAtTime(
-    0.001,
-    audioContext.currentTime + 0.18,
-  );
-
-  oscillator.connect(gain);
-  gain.connect(audioContext.destination);
-  oscillator.start();
-  oscillator.stop(audioContext.currentTime + 0.2);
+function fireConfetti() {
+  void confetti({
+    particleCount: 160,
+    spread: 80,
+    origin: { y: 0.25 },
+    colors: ["#67e8f9", "#34d399", "#fbbf24", "#f472b6"],
+  });
 }

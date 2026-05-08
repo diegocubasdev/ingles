@@ -17,43 +17,64 @@ export const PLAN_DAYS: Record<PlanType, number> = {
   "6_months": 180,
 };
 
+export const TECH_STACK_OPTIONS = [
+  "Frontend/React",
+  "Backend/Node",
+  "Fullstack",
+  "Mobile",
+  "DevOps/Cloud",
+] as const;
+
+export type TechStack = (typeof TECH_STACK_OPTIONS)[number];
+
 export const TASK_TYPES = {
-  BUILDING: "BUILDING",
-  LISTENING: "LISTENING",
-  PRONUNCIATION: "PRONUNCIATION",
-  DAILY_STANDUP: "DAILY_STANDUP",
-  TECH_SHADOWING: "TECH_SHADOWING",
-  CODE_REVIEW_LISTENING: "CODE_REVIEW_LISTENING",
+  SHADOWING: "shadowing",
+  BLIND_DICTATION: "blind_dictation",
+  RAPID_FIRE: "rapid_fire",
+  MOCK_INTERVIEW: "mock_interview",
 } as const;
 
 export type TaskType = (typeof TASK_TYPES)[keyof typeof TASK_TYPES];
+export type PracticeState =
+  | "idle"
+  | "preparing_audio"
+  | "playing"
+  | "recording"
+  | "validating";
 
 export interface User {
   uid: string;
   name: string;
   currentLevel: EnglishLevel;
+  techStack: TechStack | null;
   xp: number;
   streakDays: number;
   lastActiveDate: string | null;
   activePlan: PlanType | null;
-  planStartDate: Timestamp | null;
+  planStartDate: Timestamp | string | null;
 }
 
 export interface Task {
   id: string;
+  uid?: string;
   type: TaskType;
   content: string;
   prompt: string;
   expectedAnswer: string;
+  acceptableAnswers: string[];
   words: string[];
+  keywords: string[];
   hints?: string[];
   translation?: string;
   sentenceParts?: string[];
+  interviewQuestions?: string[];
   day: number;
   order: number;
   theme: string;
   completed: boolean;
-  createdAt?: Timestamp;
+  xpAward?: number;
+  createdAt?: Timestamp | string;
+  completedAt?: Timestamp | string;
 }
 
 export interface StudyPlan {
@@ -62,14 +83,40 @@ export interface StudyPlan {
   totalDays: number;
   completedDays: number[];
   currentDay: number;
-  startedAt: Timestamp;
-  updatedAt: Timestamp;
+  startedAt: Timestamp | string;
+  updatedAt: Timestamp | string;
+}
+
+export interface PracticeAttempt {
+  id: string;
+  uid: string;
+  taskId: string;
+  taskType: TaskType;
+  transcript: string;
+  score: number;
+  correct: boolean;
+  createdAt: string;
+}
+
+export type SyncQueueAction =
+  | "completeTask"
+  | "completeDay"
+  | "updateUser"
+  | "resetPlan";
+
+export interface SyncQueueItem {
+  id?: number;
+  uid: string;
+  action: SyncQueueAction;
+  payload: unknown;
+  createdAt: string;
+  attempts: number;
 }
 
 export interface GeneratedDay {
   day: number;
   theme: string;
-  tasks: Array<Omit<Task, "id" | "day" | "theme" | "completed" | "createdAt">>;
+  tasks: Array<Omit<Task, "id" | "uid" | "day" | "theme" | "completed" | "createdAt">>;
 }
 
 export interface GeneratedPlan {

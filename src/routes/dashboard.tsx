@@ -2,31 +2,17 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
-  Bell,
-  BellOff,
-  CalendarDays,
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
   Flame,
   Loader2,
   LogOut,
-  Play,
-  Plus,
+  Radio,
+  RotateCcw,
   Sparkles,
-  Trash2,
-  UserCheck,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
 import { signOut } from "firebase/auth";
+import { useEffect, useState } from "react";
+import { useOfflineSync } from "../hooks/useOfflineSync";
 import { auth } from "../services/firebase";
-import {
-  disableDailyStudyNotifications,
-  enableDailyStudyNotifications,
-  getNotificationSettings,
-  updateDailyStudyNotificationTimes,
-} from "../services/notificationService";
-import { speakEnglish } from "../services/speechService";
 import { generateIntensivePlan } from "../services/taskGenerator";
 import { getCurrentStudyPlan } from "../services/studyPlanService";
 import {
@@ -34,37 +20,24 @@ import {
   getOrCreateUser,
   resetPlan,
   timestampToDate,
+  updateUserTechStack,
 } from "../services/userService";
-import { PLAN_DAYS, type PlanType, type StudyPlan, type User } from "../types";
+import {
+  PLAN_DAYS,
+  TECH_STACK_OPTIONS,
+  type PlanType,
+  type StudyPlan,
+  type TechStack,
+  type User,
+} from "../types";
 
-const planOptions: Array<{ id: PlanType; label: string; description: string }> =
-  [
-    {
-      id: "7_days",
-      label: "7 dias",
-      description: "Sprint curto para ativar rotina.",
-    },
-    {
-      id: "15_days",
-      label: "15 dias",
-      description: "Ritmo forte com boa aderencia.",
-    },
-    {
-      id: "30_days",
-      label: "30 dias",
-      description: "Imersao estruturada por um mes.",
-    },
-    {
-      id: "3_months",
-      label: "3 meses",
-      description: "Progressao consistente e profunda.",
-    },
-    {
-      id: "6_months",
-      label: "6 meses",
-      description: "Trilha longa de alta intensidade.",
-    },
-  ];
+const planOptions: Array<{ id: PlanType; label: string }> = [
+  { id: "7_days", label: "7 dias" },
+  { id: "15_days", label: "15 dias" },
+  { id: "30_days", label: "30 dias" },
+  { id: "3_months", label: "3 meses" },
+  { id: "6_months", label: "6 meses" },
+];
 
 export function DashboardPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -72,6 +45,7 @@ export function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [generatingPlan, setGeneratingPlan] = useState<PlanType | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const sync = useOfflineSync(user?.uid);
 
   useEffect(() => {
     void loadDashboard();
@@ -93,14 +67,26 @@ export function DashboardPage() {
     }
   }
 
+  async function handleTechStackChange(techStack: TechStack) {
+    if (!user) return;
+    const nextUser = { ...user, techStack };
+    setUser(nextUser);
+    await updateUserTechStack(user.uid, techStack);
+  }
+
   async function handleGeneratePlan(planType: PlanType) {
-    if (!user || user.activePlan !== null) return;
+    if (!user || !user.techStack || user.activePlan !== null) return;
 
     setGeneratingPlan(planType);
     setError(null);
 
     try {
-      await generateIntensivePlan(user.uid, user.currentLevel, planType);
+      await generateIntensivePlan(
+        user.uid,
+        user.currentLevel,
+        planType,
+        user.techStack,
+      );
       await loadDashboard();
     } catch (caughtError) {
       setError(errorMessage(caughtError));
@@ -110,435 +96,179 @@ export function DashboardPage() {
   }
 
   if (loading) {
-    return <PageShell status="Carregando seu workspace de estudo..." />;
+    return <PageShell status="Carregando cockpit..." />;
   }
 
   if (!user) {
-    return (
-      <PageShell status={error ?? "Nao foi possivel carregar o usuario."} />
-    );
+    return <PageShell status={error ?? "Nao foi possivel carregar usuario."} />;
   }
 
   const hasActivePlan = user.activePlan !== null;
 
   return (
-    <section className="mx-auto grid w-full max-w-6xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:py-10">
-      <aside className="space-y-4">
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <p className="text-sm font-medium uppercase tracking-wide text-slate-500">
-            Nivel atual
-          </p>
-          <div className="mt-3 flex items-end justify-between">
-            <h1 className="text-4xl font-semibold tracking-normal text-slate-950 dark:text-white">
-              {user.currentLevel}
-            </h1>
-            <span className="rounded-md bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">
-              {user.xp} XP
-            </span>
+    <section className="min-h-[calc(100svh-73px)] bg-slate-950 px-4 py-6 text-white sm:px-6 lg:py-10">
+      <div className="mx-auto grid w-full max-w-6xl gap-5 lg:grid-cols-[0.85fr_1.15fr]">
+        <aside className="space-y-4">
+          <div className="rounded-lg border border-white/10 bg-white/10 p-5 shadow-2xl shadow-black/20 backdrop-blur-md">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-mono text-xs uppercase tracking-wide text-cyan-200">
+                  Dev English Coach
+                </p>
+                <h1 className="mt-2 text-3xl font-semibold tracking-normal">
+                  Speaking para vagas internacionais
+                </h1>
+              </div>
+              <span className="rounded-md bg-emerald-400/15 px-3 py-2 text-sm font-semibold text-emerald-200">
+                {user.xp} XP
+              </span>
+            </div>
+
+            <div className="mt-5 flex flex-wrap gap-2 text-sm">
+              <Badge icon={<Flame className="size-4" />}>
+                {user.streakDays ?? 0} dias
+              </Badge>
+              <Badge icon={<Radio className="size-4" />}>
+                {sync.online ? "Online" : "Offline"}
+              </Badge>
+              {sync.syncing ? <Badge>Sincronizando</Badge> : null}
+            </div>
+
+            {hasActivePlan ? (
+              <motion.div whileTap={{ scale: 0.97 }}>
+                <Link
+                  to="/practice"
+                  className="mt-6 inline-flex w-full items-center justify-center gap-3 rounded-lg bg-cyan-300 px-5 py-5 text-lg font-bold text-slate-950 shadow-lg shadow-cyan-500/20 hover:bg-cyan-200"
+                >
+                  Continuar Trilha
+                  <ArrowRight className="size-5" />
+                </Link>
+              </motion.div>
+            ) : (
+              <p className="mt-5 text-sm leading-6 text-slate-300">
+                Escolha sua stack e gere uma trilha em lote. Depois disso, as
+                tarefas rodam offline com validacao local.
+              </p>
+            )}
           </div>
-          <StreakBadge streakDays={user.streakDays ?? 0} />
-          <p className="mt-4 text-sm leading-6 text-slate-600 dark:text-slate-300">
-            Seu roteiro e gerado uma unica vez e salvo no Firestore para reduzir
-            custo de API.
-          </p>
-        </div>
 
-        <AccountCard
-          user={user}
-          hasActivePlan={hasActivePlan}
-          onAccountChanged={loadDashboard}
-        />
-        <NotificationCard />
-        <IdiomOfTheDay />
-      </aside>
+          <AccountCard user={user} onAccountChanged={loadDashboard} />
+        </aside>
 
-      <div className="min-w-0">
-        {error ? (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
-          </div>
-        ) : null}
+        <div className="space-y-4">
+          {error ? (
+            <div className="rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+              {error}
+            </div>
+          ) : null}
 
-        {hasActivePlan ? (
-          <ActivePlan user={user} studyPlan={studyPlan} />
-        ) : (
-          <InitialSetup
-            generatingPlan={generatingPlan}
-            onSelectPlan={handleGeneratePlan}
+          <TechStackCard
+            selected={user.techStack}
+            disabled={hasActivePlan}
+            onSelect={(techStack) => void handleTechStackChange(techStack)}
           />
-        )}
+
+          {hasActivePlan ? (
+            <ActivePlan user={user} studyPlan={studyPlan} />
+          ) : (
+            <PlanCard
+              disabled={!user.techStack || generatingPlan !== null}
+              generatingPlan={generatingPlan}
+              onSelectPlan={handleGeneratePlan}
+            />
+          )}
+        </div>
       </div>
     </section>
   );
 }
 
-function AccountCard({
-  user,
-  hasActivePlan,
-  onAccountChanged,
+function TechStackCard({
+  selected,
+  disabled,
+  onSelect,
 }: {
-  user: User;
-  hasActivePlan: boolean;
-  onAccountChanged: () => Promise<void>;
+  selected: TechStack | null;
+  disabled: boolean;
+  onSelect: (techStack: TechStack) => void;
 }) {
-  const [busy, setBusy] = useState(false);
-  const authUser = getAuthUser();
-  const navigate = useNavigate();
-
-  async function logout() {
-    setBusy(true);
-    try {
-      await signOut(auth);
-      await navigate({
-        to: "/login",
-        replace: true,
-      });
-    } catch (error) {
-      console.error("Error signing out:", error);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleResetPlan() {
-    if (
-      !confirm(
-        "Tem certeza que deseja resetar o plano atual? Isso irá remover todo o progresso.",
-      )
-    )
-      return;
-    setBusy(true);
-    try {
-      await resetPlan(user.uid);
-      await onAccountChanged();
-    } catch (error) {
-      console.error("Error resetting plan:", error);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex items-center gap-3">
-        <UserCheck className="size-5 text-emerald-600" aria-hidden="true" />
-        <h2 className="font-semibold text-slate-950 dark:text-white">Conta</h2>
-      </div>
-      <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
-        Conectado com Google{authUser?.email ? `: ${authUser.email}` : "."}
+    <div className="rounded-lg border border-white/10 bg-white/10 p-5 backdrop-blur-md">
+      <p className="font-mono text-xs uppercase tracking-wide text-cyan-200">
+        Onboarding obrigatorio
       </p>
-      {hasActivePlan && (
-        <button
-          type="button"
-          onClick={() => void handleResetPlan()}
-          disabled={busy}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-red-300 px-4 py-3 text-sm font-semibold text-red-700 hover:border-red-950 disabled:opacity-60 dark:border-red-700 dark:text-red-300 dark:hover:border-red-500"
-        >
-          {busy ? <Loader2 className="size-4 animate-spin" /> : "Resetar Plano"}
-        </button>
-      )}
-      <button
-        type="button"
-        onClick={() => void logout()}
-        disabled={busy}
-        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 hover:border-slate-950 disabled:opacity-60 dark:border-slate-700 dark:text-slate-200 dark:hover:border-white"
-      >
-        {busy ? (
-          <Loader2 className="size-4 animate-spin" />
-        ) : (
-          <LogOut className="size-4" />
-        )}
-        Sair
-      </button>
-    </div>
-  );
-}
-
-function StreakBadge({ streakDays }: { streakDays: number }) {
-  return (
-    <motion.div
-      initial={{ scale: 0.96, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      className="mt-4 inline-flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-semibold text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-300"
-    >
-      <motion.span
-        animate={{ rotate: [-4, 4, -4], scale: [1, 1.08, 1] }}
-        transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
-      >
-        <Flame
-          className="size-5 fill-orange-500 text-orange-500"
-          aria-hidden="true"
-        />
-      </motion.span>
-      {streakDays} {streakDays === 1 ? "Dia" : "Dias"}
-    </motion.div>
-  );
-}
-
-const idioms = [
-  { phrase: "Piece of cake", translation: "Muito facil" },
-  { phrase: "Break the ice", translation: "Quebrar o gelo" },
-  { phrase: "Hang in there", translation: "Aguente firme" },
-  { phrase: "Better late than never", translation: "Antes tarde do que nunca" },
-  { phrase: "Keep it up", translation: "Continue assim" },
-];
-
-function IdiomOfTheDay() {
-  const idiom = idioms[new Date().getDay() % idioms.length];
-
-  function speakIdiom() {
-    void speakEnglish(idiom.phrase, { rate: 0.88 });
-  }
-
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium uppercase tracking-wide text-slate-500">
-            Expressao do dia
-          </p>
-          <h2 className="mt-2 text-xl font-semibold tracking-normal text-slate-950 dark:text-white">
-            {idiom.phrase}
-          </h2>
-          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-            {idiom.translation}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={speakIdiom}
-          className="grid size-10 shrink-0 place-items-center rounded-lg bg-slate-950 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
-          aria-label="Ouvir expressao"
-          title="Ouvir expressao"
-        >
-          <Play className="size-4 fill-current" aria-hidden="true" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function NotificationCard() {
-  const [settings, setSettings] = useState(getNotificationSettings);
-  const [draftTime, setDraftTime] = useState("09:00");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [open, setOpen] = useState(false);
-  const timesLabel = settings.times.join(", ");
-
-  async function enable() {
-    setBusy(true);
-    setError(null);
-
-    try {
-      await enableDailyStudyNotifications();
-      setSettings(getNotificationSettings());
-    } catch (caughtError) {
-      setError(errorMessage(caughtError));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function disable() {
-    disableDailyStudyNotifications();
-    setSettings(getNotificationSettings());
-    setError(null);
-  }
-
-  function addTime() {
-    const times = updateDailyStudyNotificationTimes([
-      ...settings.times,
-      draftTime,
-    ]);
-    setSettings({ ...getNotificationSettings(), times });
-  }
-
-  function removeTime(time: string) {
-    const times = updateDailyStudyNotificationTimes(
-      settings.times.filter((currentTime) => currentTime !== time),
-    );
-    setSettings({ ...getNotificationSettings(), times });
-  }
-
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex items-center gap-3">
-        {settings.enabled ? (
-          <Bell className="size-5 text-emerald-600" aria-hidden="true" />
-        ) : (
-          <BellOff className="size-5 text-slate-500" aria-hidden="true" />
-        )}
-        <h2 className="font-semibold text-slate-950 dark:text-white">
-          Lembretes PWA
-        </h2>
-      </div>
-      <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
-        Notificacoes locais todos os dias as {timesLabel}.
-      </p>
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="mt-3 flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white"
-      >
-        {open ? (
-          <ChevronUp className="size-4" />
-        ) : (
-          <ChevronDown className="size-4" />
-        )}
-        Configurar horarios
-      </button>
-      {open && (
-        <>
-          <div className="mt-4 space-y-2">
-            {settings.times.map((time) => (
-              <div
-                key={time}
-                className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-800 dark:bg-slate-950"
-              >
-                <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                  {time}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => removeTime(time)}
-                  className="grid size-8 place-items-center rounded-md text-slate-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-500/10 dark:hover:text-red-300"
-                  aria-label={`Remover lembrete das ${time}`}
-                  title="Remover horario"
-                >
-                  <Trash2 className="size-4" aria-hidden="true" />
-                </button>
-              </div>
-            ))}
-          </div>
-          <div className="mt-4 flex gap-2">
-            <input
-              type="time"
-              value={draftTime}
-              onChange={(event) => setDraftTime(event.target.value)}
-              className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-slate-950 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:focus:border-white"
-            />
-            <button
+      <h2 className="mt-2 text-2xl font-semibold text-white">
+        Qual e sua stack?
+      </h2>
+      <div className="mt-5 grid gap-2 sm:grid-cols-2">
+        {TECH_STACK_OPTIONS.map((option) => {
+          const active = selected === option;
+          return (
+            <motion.button
+              key={option}
               type="button"
-              onClick={addTime}
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-950 dark:border-slate-700 dark:text-slate-200 dark:hover:border-white"
+              whileTap={{ scale: 0.95 }}
+              disabled={disabled}
+              onClick={() => onSelect(option)}
+              className={[
+                "rounded-lg border px-4 py-3 text-left font-mono text-sm transition disabled:opacity-60",
+                active
+                  ? "border-cyan-300 bg-cyan-300 text-slate-950"
+                  : "border-white/10 bg-slate-950/50 text-slate-200 hover:border-cyan-200",
+              ].join(" ")}
             >
-              <Plus className="size-4" aria-hidden="true" />
-              Adicionar
-            </button>
-          </div>
-        </>
-      )}
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row lg:flex-col">
-        {settings.enabled ? (
-          <button
-            type="button"
-            onClick={disable}
-            className="rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 hover:border-slate-950 dark:border-slate-700 dark:text-slate-200 dark:hover:border-white"
-          >
-            Desativar notificacoes
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => void enable()}
-            disabled={
-              busy ||
-              settings.permission === "denied" ||
-              settings.permission === "unsupported"
-            }
-            className="rounded-lg bg-slate-950 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
-          >
-            {busy ? "Solicitando..." : "Ativar notificacoes"}
-          </button>
-        )}
+              {option}
+            </motion.button>
+          );
+        })}
       </div>
-      {settings.permission === "denied" ? (
-        <p className="mt-3 text-xs leading-5 text-red-700">
-          Permissao bloqueada no navegador. Libere notificacoes nas
-          configuracoes do site.
-        </p>
-      ) : null}
-      {settings.permission === "unsupported" ? (
-        <p className="mt-3 text-xs leading-5 text-amber-800">
-          Este navegador nao suporta notificacoes.
-        </p>
-      ) : null}
-      {error ? (
-        <p className="mt-3 text-xs leading-5 text-red-700">{error}</p>
-      ) : null}
     </div>
   );
 }
 
-function InitialSetup({
+function PlanCard({
+  disabled,
   generatingPlan,
   onSelectPlan,
 }: {
+  disabled: boolean;
   generatingPlan: PlanType | null;
   onSelectPlan: (planType: PlanType) => void;
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="rounded-lg border border-white/10 bg-white/10 p-5 backdrop-blur-md">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-medium uppercase tracking-wide text-slate-500">
-            Setup inicial
+          <p className="font-mono text-xs uppercase tracking-wide text-cyan-200">
+            AI batch only
           </p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-normal text-slate-950 dark:text-white">
-            Escolha seu plano intensivo
+          <h2 className="mt-2 text-2xl font-semibold text-white">
+            Gerar trilha local-first
           </h2>
         </div>
-        <Sparkles className="size-8 text-amber-500" aria-hidden="true" />
+        <Sparkles className="size-7 text-amber-300" />
       </div>
 
-      <div className="mt-6 grid gap-3 sm:grid-cols-2">
-        {planOptions.map((option) => {
-          const isGenerating = generatingPlan === option.id;
-          return (
-            <button
-              key={option.id}
-              type="button"
-              disabled={generatingPlan !== null}
-              onClick={() => onSelectPlan(option.id)}
-              className="rounded-lg border border-slate-200 p-4 text-left transition hover:border-slate-950 hover:shadow-sm disabled:opacity-60 dark:border-slate-800 dark:hover:border-white"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-semibold text-slate-950 dark:text-white">
-                  {option.label}
-                </span>
-                {isGenerating ? (
-                  <Loader2
-                    className="size-5 animate-spin text-slate-500"
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <ArrowRight
-                    className="size-5 text-slate-400"
-                    aria-hidden="true"
-                  />
-                )}
-              </div>
-              <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                {option.description}
-              </p>
-              <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                {PLAN_DAYS[option.id]} dias
-              </p>
-            </button>
-          );
-        })}
+      <div className="mt-5 grid gap-2 sm:grid-cols-2">
+        {planOptions.map((option) => (
+          <motion.button
+            key={option.id}
+            type="button"
+            whileTap={{ scale: 0.95 }}
+            disabled={disabled}
+            onClick={() => onSelectPlan(option.id)}
+            className="rounded-lg border border-white/10 bg-slate-950/60 p-4 text-left hover:border-cyan-200 disabled:opacity-60"
+          >
+            <span className="font-semibold text-white">{option.label}</span>
+            <span className="mt-2 block text-sm text-slate-400">
+              {PLAN_DAYS[option.id]} dias, 4 drills/dia
+            </span>
+            {generatingPlan === option.id ? (
+              <Loader2 className="mt-3 size-5 animate-spin text-cyan-200" />
+            ) : null}
+          </motion.button>
+        ))}
       </div>
-
-      {generatingPlan ? (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mt-5 rounded-lg bg-slate-950 px-4 py-3 text-sm font-medium text-white dark:bg-white dark:text-slate-950"
-        >
-          Criando seu plano intensivo... isso pode levar alguns instantes.
-        </motion.div>
-      ) : null}
     </div>
   );
 }
@@ -552,99 +282,124 @@ function ActivePlan({
 }) {
   const totalDays = user.activePlan ? PLAN_DAYS[user.activePlan] : 0;
   const completedDays = studyPlan?.completedDays ?? [];
-  const progress =
-    totalDays > 0 ? Math.round((completedDays.length / totalDays) * 100) : 0;
+  const progress = totalDays
+    ? Math.round((completedDays.length / totalDays) * 100)
+    : 0;
   const startDate = timestampToDate(user.planStartDate);
-  const visibleDays = useMemo(
-    () => Array.from({ length: totalDays }, (_, index) => index + 1),
-    [totalDays],
-  );
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+    <div className="rounded-lg border border-white/10 bg-white/10 p-5 backdrop-blur-md">
+      <p className="font-mono text-xs uppercase tracking-wide text-cyan-200">
+        Trilha ativa
+      </p>
+      <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-sm font-medium uppercase tracking-wide text-slate-500">
-            Roadmap ativo
-          </p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-normal text-slate-950 dark:text-white">
-            Plano de {totalDays} dias
-          </h2>
-          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-            {startDate
-              ? `Iniciado em ${startDate.toLocaleDateString("pt-BR")}`
-              : "Plano iniciado"}
+          <h2 className="text-3xl font-semibold text-white">{progress}%</h2>
+          <p className="mt-2 text-sm text-slate-300">
+            {completedDays.length}/{totalDays} dias concluidos
+            {startDate ? ` desde ${startDate.toLocaleDateString("pt-BR")}` : ""}
           </p>
         </div>
         <Link
-          to="/practice"
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
+          to="/shorts"
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 px-4 py-3 text-sm font-semibold text-slate-100 hover:border-cyan-200"
         >
-          Continuar tarefas do dia
-          <ArrowRight className="size-4" aria-hidden="true" />
+          Tech Shorts
+          <ArrowRight className="size-4" />
         </Link>
       </div>
-
-      <div className="mt-6">
-        <div className="flex items-center justify-between text-sm font-medium text-slate-600 dark:text-slate-300">
-          <span>{progress}% concluido</span>
-          <span>
-            {completedDays.length}/{totalDays} dias
-          </span>
-        </div>
-        <div className="mt-2 h-3 overflow-hidden rounded-full bg-slate-100">
-          <div
-            className="h-full rounded-full bg-emerald-500"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-      </div>
-
-      <div className="mt-6 grid grid-cols-4 gap-2 sm:grid-cols-7 md:grid-cols-10">
-        {visibleDays.map((day) => {
-          const isDone = completedDays.includes(day);
-          const isCurrent = day === (studyPlan?.currentDay ?? 1);
-          return (
-            <div
-              key={day}
-              className={[
-                "flex aspect-square items-center justify-center rounded-lg border text-sm font-semibold",
-                isDone
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                  : "",
-                isCurrent && !isDone
-                  ? "border-slate-950 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950"
-                  : "",
-                !isDone && !isCurrent
-                  ? "border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400"
-                  : "",
-              ].join(" ")}
-              title={`Dia ${day}`}
-            >
-              {isDone ? (
-                <CheckCircle2 className="size-5" aria-hidden="true" />
-              ) : (
-                day
-              )}
-            </div>
-          );
-        })}
+      <div className="mt-5 h-3 overflow-hidden rounded-full bg-slate-800">
+        <div
+          className="h-full rounded-full bg-cyan-300 transition-all"
+          style={{ width: `${progress}%` }}
+        />
       </div>
     </div>
   );
 }
 
+function AccountCard({
+  user,
+  onAccountChanged,
+}: {
+  user: User;
+  onAccountChanged: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const authUser = getAuthUser();
+  const navigate = useNavigate();
+
+  async function logout() {
+    setBusy(true);
+    try {
+      await signOut(auth);
+      await navigate({ to: "/login", replace: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleResetPlan() {
+    if (!confirm("Resetar plano e progresso local?")) return;
+    setBusy(true);
+    try {
+      await resetPlan(user.uid);
+      await onAccountChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/10 p-5 backdrop-blur-md">
+      <p className="text-sm text-slate-300">
+        {authUser?.email ?? "Conta Google conectada"}
+      </p>
+      <div className="mt-4 grid gap-2">
+        <button
+          type="button"
+          onClick={() => void handleResetPlan()}
+          disabled={busy}
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-300/30 px-4 py-3 text-sm font-semibold text-red-100 disabled:opacity-60"
+        >
+          <RotateCcw className="size-4" />
+          Resetar plano
+        </button>
+        <button
+          type="button"
+          onClick={() => void logout()}
+          disabled={busy}
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 px-4 py-3 text-sm font-semibold text-slate-100 disabled:opacity-60"
+        >
+          <LogOut className="size-4" />
+          Sair
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Badge({
+  icon,
+  children,
+}: {
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <span className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-slate-950/50 px-3 py-2 text-slate-200">
+      {icon}
+      {children}
+    </span>
+  );
+}
+
 function PageShell({ status }: { status: string }) {
   return (
-    <section className="mx-auto flex min-h-[70svh] w-full max-w-3xl items-center justify-center px-4">
-      <div className="rounded-lg border border-slate-200 bg-white p-6 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <CalendarDays
-          className="mx-auto size-8 text-slate-500"
-          aria-hidden="true"
-        />
-        <p className="mt-4 text-sm font-medium text-slate-700 dark:text-slate-200">
-          {status}
-        </p>
+    <section className="grid min-h-[calc(100svh-73px)] place-items-center bg-slate-950 px-4 text-white">
+      <div className="rounded-lg border border-white/10 bg-white/10 p-6 text-center backdrop-blur-md">
+        <Loader2 className="mx-auto size-7 animate-spin text-cyan-200" />
+        <p className="mt-4 text-sm text-slate-200">{status}</p>
       </div>
     </section>
   );

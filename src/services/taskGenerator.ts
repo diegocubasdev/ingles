@@ -7,41 +7,38 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { localDb } from "./localDb";
+import { saveGeneratedPlanLocally } from "./studyPlanService";
 import {
   PLAN_DAYS,
   TASK_TYPES,
   type EnglishLevel,
   type GeneratedPlan,
   type PlanType,
+  type Task,
+  type TechStack,
 } from "../types";
 
 export function buildGeminiPrompt(
   currentLevel: EnglishLevel,
+  techStack: TechStack,
   totalDays: number,
 ) {
-  return `You are an expert English curriculum designer for Brazilian Portuguese speakers learning English for Software Engineering careers abroad.
+  return `You are an English acquisition expert for Brazilian software developers preparing for international jobs.
 
-Create an intensive English study plan as STRICT JSON only. Do not include markdown, comments, explanations, or trailing commas.
+Create an offline-first speaking/listening training plan as STRICT JSON only.
 
 Student level: ${currentLevel}
+Developer stack: ${techStack}
 Plan length in days: ${totalDays}
 
-Generate exactly ${totalDays} day objects. Each day must contain 10 tasks with a balanced mix:
-- 2 LISTENING tasks
-- 2 PRONUNCIATION tasks
-- 2 BUILDING tasks
-- 2 DAILY_STANDUP tasks
-- 1 TECH_SHADOWING task
-- 1 CODE_REVIEW_LISTENING task
+Generate exactly ${totalDays} day objects. Each day must contain exactly 4 tasks:
+- 1 shadowing
+- 1 blind_dictation
+- 1 rapid_fire
+- 1 mock_interview
 
-The plan must teach practical real-life English using high-frequency situations in Software Engineering: daily stand-ups, code reviews, shadowing senior devs, debugging, deployments, API integrations, database queries, cloud platforms, and technical discussions.
-
-Vocabulary focus: front-end architecture, backend integrations, databases, cloud deploys, bug fixes, pull requests, sprints, agile methodologies.
-
-Difficulty rule:
-- Use the student's current level as the base.
-- Include some i+1 challenge, especially in PRONUNCIATION and speaking tasks.
-- Keep sentences useful, natural, and short enough for daily practice.
+Use ONLY jargon and situations from ${techStack}. Examples must feel like real work: pull requests, deploy failures, standups, incidents, CORS, API contracts, CI, debugging, cloud, tests, refactors, product pressure.
 
 Return this exact JSON shape:
 {
@@ -51,64 +48,57 @@ Return this exact JSON shape:
       "theme": "string",
       "tasks": [
         {
-          "type": "LISTENING",
-          "content": "Text to be spoken with text-to-speech. The user will hear it.",
-          "prompt": "What the user must do after listening.",
-          "expectedAnswer": "Expected typed answer or short answer.",
+          "type": "shadowing",
+          "content": "English sentence spoken by TTS at native speed.",
+          "prompt": "Repeat exactly what you hear.",
+          "expectedAnswer": "Exact English sentence.",
+          "acceptableAnswers": ["Exact English sentence", "Minor variant"],
+          "words": ["deploy", "review"],
+          "keywords": ["deploy", "review"],
+          "hints": ["short Brazilian Portuguese hint"],
+          "translation": "Brazilian Portuguese translation",
+          "sentenceParts": ["chunk", "chunk"]
+        },
+        {
+          "type": "blind_dictation",
+          "content": "Fast English sentence for dictation.",
+          "prompt": "Type what you hear.",
+          "expectedAnswer": "Exact English sentence.",
+          "acceptableAnswers": ["Exact English sentence"],
           "words": [],
-          "hints": ["short helpful hint in Portuguese"],
-          "translation": "Brazilian Portuguese translation of the main English phrase",
-          "sentenceParts": ["optional visible fragments or blanks"]
-        },
-        {
-          "type": "PRONUNCIATION",
-          "content": "Instruction for the user.",
-          "prompt": "Read this sentence aloud.",
-          "expectedAnswer": "The exact English sentence the user should say.",
-          "words": [],
-          "hints": ["pronunciation or meaning hint in Portuguese"],
-          "translation": "Brazilian Portuguese translation of the sentence",
-          "sentenceParts": ["optional phrase chunks for rhythm"]
-        },
-        {
-          "type": "BUILDING",
-          "content": "Portuguese meaning or short situation.",
-          "prompt": "Build the sentence with the chips.",
-          "expectedAnswer": "Correct English sentence.",
-          "words": ["shuffled", "word", "chips"],
-          "hints": ["grammar or word order hint in Portuguese"],
-          "translation": "Brazilian Portuguese translation of the answer",
-          "sentenceParts": ["I", "____", "coffee", "every morning"]
-        },
-        {
-          "type": "DAILY_STANDUP",
-          "content": "Context for the stand-up: what you did yesterday, what you'll do today, blockers.",
-          "prompt": "Explain your stand-up update in 60 seconds.",
-          "expectedAnswer": "Expected key points or evaluation criteria.",
-          "words": [],
-          "hints": ["structure hint in Portuguese"],
-          "translation": "Brazilian Portuguese translation of the context",
-          "sentenceParts": []
-        },
-        {
-          "type": "TECH_SHADOWING",
-          "content": "Technical phrase to shadow.",
-          "prompt": "Listen and repeat the phrase.",
-          "expectedAnswer": "The exact phrase to repeat.",
-          "words": ["key", "technical", "words"],
-          "hints": ["pronunciation hints"],
+          "keywords": ["api", "bug"],
+          "hints": ["short Brazilian Portuguese hint"],
           "translation": "Brazilian Portuguese translation",
           "sentenceParts": []
         },
         {
-          "type": "CODE_REVIEW_LISTENING",
-          "content": "Code review feedback text to be spoken.",
-          "prompt": "Summarize the reviewer's feedback.",
-          "expectedAnswer": "Expected summary or key points.",
+          "type": "rapid_fire",
+          "content": "Portuguese sentence the user must say in English.",
+          "prompt": "Say this in English before the timer ends.",
+          "expectedAnswer": "Natural English answer.",
+          "acceptableAnswers": ["Natural English answer", "Natural variant"],
           "words": [],
-          "hints": ["listening hints"],
+          "keywords": ["database", "down"],
+          "hints": ["short Brazilian Portuguese hint"],
           "translation": "Brazilian Portuguese translation",
           "sentenceParts": []
+        },
+        {
+          "type": "mock_interview",
+          "content": "Daily standup simulation for ${techStack}.",
+          "prompt": "Answer the three questions like a real daily.",
+          "expectedAnswer": "Speak clearly about yesterday, today, and blockers.",
+          "acceptableAnswers": ["yesterday today blockers"],
+          "words": [],
+          "keywords": ["yesterday", "today", "blocker"],
+          "hints": ["short Brazilian Portuguese hint"],
+          "translation": "Daily standup",
+          "sentenceParts": [],
+          "interviewQuestions": [
+            "What did you work on yesterday?",
+            "What will you focus on today?",
+            "Do you have any blockers?"
+          ]
         }
       ]
     }
@@ -116,16 +106,10 @@ Return this exact JSON shape:
 }
 
 Rules:
-- All expectedAnswer values must be in English.
-- BUILDING words must contain every word needed to form expectedAnswer, shuffled.
-- LISTENING content must be in English and suitable for speech synthesis.
-- DAILY_STANDUP content provides context for speaking under pressure.
-- TECH_SHADOWING expectedAnswer is the phrase to repeat, words are key terms to validate.
-- CODE_REVIEW_LISTENING content is spoken feedback, expectedAnswer is summary.
-- Every task must include 1 to 3 didactic hints in Brazilian Portuguese.
-- Every task must include translation in Brazilian Portuguese.
-- sentenceParts must help the student complete, chunk, and pronounce the answer.
-- Hints should explain how to say the answer naturally, including pronunciation notes.
+- All English must be natural, short, and useful in international software teams.
+- acceptableAnswers must enable local validation without AI.
+- keywords must be lowercase English words used for local matching.
+- mock_interview must always include exactly 3 interviewQuestions.
 - Avoid offensive, adult, political, medical, or legally sensitive content.
 - Keep JSON valid and parseable by JSON.parse.`;
 }
@@ -134,6 +118,7 @@ export async function generateIntensivePlan(
   uid: string,
   currentLevel: EnglishLevel,
   planType: PlanType,
+  techStack: TechStack,
 ) {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
   if (!apiKey) {
@@ -148,9 +133,10 @@ export async function generateIntensivePlan(
   });
 
   const response = await model.generateContent(
-    buildGeminiPrompt(currentLevel, totalDays),
+    buildGeminiPrompt(currentLevel, techStack, totalDays),
   );
   const plan = parseGeneratedPlan(response.response.text(), totalDays);
+  const tasks = flattenGeneratedTasks(uid, plan);
 
   await runTransaction(db, async (transaction) => {
     const userRef = doc(db, "users", uid);
@@ -165,8 +151,7 @@ export async function generateIntensivePlan(
       throw new Error("Voce ja possui um plano ativo.");
     }
 
-    const planRef = doc(db, "users", uid, "studyPlan", "current");
-    transaction.set(planRef, {
+    transaction.set(doc(db, "users", uid, "studyPlan", "current"), {
       uid,
       activePlan: planType,
       totalDays,
@@ -176,13 +161,40 @@ export async function generateIntensivePlan(
       updatedAt: serverTimestamp(),
     });
     transaction.update(userRef, {
+      techStack,
       activePlan: planType,
       planStartDate: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
   });
 
-  await saveGeneratedTasks(uid, plan);
+  await saveGeneratedTasks(uid, tasks);
+  await saveGeneratedPlanLocally({ uid, activePlan: planType, totalDays, tasks });
+  await localDb.users.update(uid, {
+    techStack,
+    activePlan: planType,
+    planStartDate: new Date().toISOString(),
+  });
+}
+
+export async function evaluateMockInterview(transcripts: string[]) {
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("Configure VITE_GEMINI_API_KEY para avaliar a entrevista.");
+  }
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({
+    model: import.meta.env.VITE_GEMINI_MODEL ?? "gemini-flash-latest",
+  });
+
+  const response = await model.generateContent(`Evaluate this software daily standup in concise Brazilian Portuguese.
+Give 3 bullets: grammar, clarity, and one better version in English.
+
+Transcript:
+${transcripts.map((item, index) => `${index + 1}. ${item}`).join("\n")}`);
+
+  return response.response.text();
 }
 
 function parseGeneratedPlan(rawText: string, totalDays: number): GeneratedPlan {
@@ -196,24 +208,17 @@ function parseGeneratedPlan(rawText: string, totalDays: number): GeneratedPlan {
   const parsed = JSON.parse(cleaned) as GeneratedPlan;
 
   if (!Array.isArray(parsed.days) || parsed.days.length !== totalDays) {
-    throw new Error(
-      "A resposta da IA nao trouxe a quantidade esperada de dias.",
-    );
+    throw new Error("A resposta da IA nao trouxe a quantidade esperada de dias.");
   }
 
   parsed.days.forEach((day) => {
-    if (!Number.isInteger(day.day) || !day.theme || !Array.isArray(day.tasks)) {
+    if (!Number.isInteger(day.day) || !day.theme || day.tasks.length !== 4) {
       throw new Error("A resposta da IA trouxe um dia invalido.");
     }
 
     day.tasks.forEach((task) => {
       const isKnownType = Object.values(TASK_TYPES).includes(task.type);
-      if (
-        !isKnownType ||
-        !task.content ||
-        !task.prompt ||
-        !task.expectedAnswer
-      ) {
+      if (!isKnownType || !task.content || !task.prompt || !task.expectedAnswer) {
         throw new Error("A resposta da IA trouxe uma tarefa invalida.");
       }
     });
@@ -222,36 +227,45 @@ function parseGeneratedPlan(rawText: string, totalDays: number): GeneratedPlan {
   return parsed;
 }
 
-async function saveGeneratedTasks(uid: string, plan: GeneratedPlan) {
-  const taskWrites = plan.days.flatMap((day) =>
+function flattenGeneratedTasks(uid: string, plan: GeneratedPlan): Task[] {
+  return plan.days.flatMap((day) =>
     day.tasks.map((task, index) => ({
+      ...task,
+      uid,
       id: `day-${day.day}-task-${index + 1}`,
-      data: {
-        ...task,
-        words: Array.isArray(task.words) ? task.words : [],
-        hints: Array.isArray(task.hints) ? task.hints : [],
-        translation:
-          typeof task.translation === "string" ? task.translation : "",
-        sentenceParts: Array.isArray(task.sentenceParts)
-          ? task.sentenceParts
-          : [],
-        day: day.day,
-        order: index + 1,
-        theme: day.theme,
-        completed: false,
-        createdAt: serverTimestamp(),
-      },
+      acceptableAnswers: normalizeList(task.acceptableAnswers, task.expectedAnswer),
+      words: Array.isArray(task.words) ? task.words : [],
+      keywords: normalizeList(task.keywords),
+      hints: Array.isArray(task.hints) ? task.hints : [],
+      translation: typeof task.translation === "string" ? task.translation : "",
+      sentenceParts: Array.isArray(task.sentenceParts) ? task.sentenceParts : [],
+      interviewQuestions: Array.isArray(task.interviewQuestions)
+        ? task.interviewQuestions.slice(0, 3)
+        : undefined,
+      day: day.day,
+      order: index + 1,
+      theme: day.theme,
+      completed: false,
+      createdAt: new Date().toISOString(),
     })),
   );
+}
 
-  for (let index = 0; index < taskWrites.length; index += 450) {
+async function saveGeneratedTasks(uid: string, tasks: Task[]) {
+  for (let index = 0; index < tasks.length; index += 450) {
     const batch = writeBatch(db);
-    const chunk = taskWrites.slice(index, index + 450);
+    const chunk = tasks.slice(index, index + 450);
 
     chunk.forEach((task) => {
-      batch.set(doc(collection(db, "users", uid, "tasks"), task.id), task.data);
+      batch.set(doc(collection(db, "users", uid, "tasks"), task.id), task);
     });
 
     await batch.commit();
   }
+}
+
+function normalizeList(value: unknown, fallback?: string) {
+  const values = Array.isArray(value) ? value.filter(Boolean).map(String) : [];
+  if (fallback && !values.includes(fallback)) values.unshift(fallback);
+  return values;
 }

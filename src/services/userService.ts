@@ -12,16 +12,17 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
-  type Timestamp,
 } from "firebase/firestore";
 import { auth, authPersistenceReady, db } from "./firebase";
 import { deleteStudyPlan } from "./studyPlanService";
-import type { User } from "../types";
+import { cacheUser, enqueueSync, localDb } from "./localDb";
+import type { TechStack, User } from "../types";
 
 const defaultUser = (uid: string): User => ({
   uid,
   name: "Student",
   currentLevel: "A1",
+  techStack: null,
   xp: 0,
   streakDays: 0,
   lastActiveDate: null,
@@ -95,11 +96,28 @@ export async function getOrCreateUser(): Promise<User> {
   }
 
   const displayName = firebaseUser.displayName ?? undefined;
+  const localUser = await localDb.users.get(firebaseUser.uid);
+
+  if (!navigator.onLine && localUser) {
+    return localUser;
+  }
+
   const ref = doc(db, "users", firebaseUser.uid);
-  const snapshot = await getDoc(ref);
+  let snapshot;
+
+  try {
+    snapshot = await getDoc(ref);
+  } catch {
+    if (localUser) return localUser;
+    throw new Error("Nao foi possivel carregar usuario offline.");
+  }
 
   if (snapshot.exists()) {
-    const user = snapshot.data() as User;
+    const user = {
+      ...defaultUser(firebaseUser.uid),
+      ...(snapshot.data() as User),
+      techStack: (snapshot.data() as Partial<User>).techStack ?? null,
+    };
 
     if (displayName && user.name !== displayName) {
       await setDoc(
@@ -111,13 +129,13 @@ export async function getOrCreateUser(): Promise<User> {
         { merge: true },
       );
 
-      return {
+      return cacheUser({
         ...user,
         name: displayName,
-      };
+      });
     }
 
-    return user;
+    return cacheUser(user);
   }
 
   const user: User = {
@@ -131,7 +149,7 @@ export async function getOrCreateUser(): Promise<User> {
     updatedAt: serverTimestamp(),
   });
 
-  return user;
+  return cacheUser(user);
 }
 
 export async function signInWithGoogle(): Promise<User | void> {
@@ -192,15 +210,58 @@ export async function getUser(uid: string): Promise<User | null> {
 }
 
 export async function resetPlan(uid: string): Promise<void> {
-  await updateDoc(doc(db, "users", uid), {
+  await localDb.users.update(uid, {
     activePlan: null,
     planStartDate: null,
-    updatedAt: serverTimestamp(),
   });
+
+  if (navigator.onLine) {
+    try {
+      await updateDoc(doc(db, "users", uid), {
+        activePlan: null,
+        planStartDate: null,
+        updatedAt: serverTimestamp(),
+      });
+    } catch {
+      await enqueueSync({
+        uid,
+        action: "updateUser",
+        payload: { activePlan: null, planStartDate: null },
+      });
+    }
+  } else {
+    await enqueueSync({
+      uid,
+      action: "updateUser",
+      payload: { activePlan: null, planStartDate: null },
+    });
+  }
 
   await deleteStudyPlan(uid);
 }
 
-export function timestampToDate(value: Timestamp | null) {
-  return value ? value.toDate() : null;
+export async function updateUserTechStack(uid: string, techStack: TechStack) {
+  const payload = { techStack };
+  await localDb.users.update(uid, payload);
+
+  if (!navigator.onLine) {
+    await enqueueSync({ uid, action: "updateUser", payload });
+    return;
+  }
+
+  try {
+    await setDoc(
+      doc(db, "users", uid),
+      { ...payload, updatedAt: serverTimestamp() },
+      { merge: true },
+    );
+  } catch {
+    await enqueueSync({ uid, action: "updateUser", payload });
+  }
+}
+
+export function timestampToDate(value: User["planStartDate"]) {
+  if (!value) return null;
+  if (typeof value === "string") return new Date(value);
+  return value.toDate();
 }

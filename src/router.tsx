@@ -5,6 +5,7 @@ import { DashboardPage } from "./routes/dashboard";
 import { IndexPage } from "./routes";
 import { Login } from "./routes/login";
 import { PracticePage } from "./routes/practice";
+import { ShortsPage } from "./routes/shorts";
 import { rootRoute } from "./routes/__root";
 
 async function waitForFirebaseAuth() {
@@ -88,11 +89,21 @@ const practiceRoute = createRoute({
   component: PracticePage,
 });
 
+const shortsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/shorts",
+  beforeLoad: async () => {
+    await requireAuth();
+  },
+  component: ShortsPage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
   dashboardRoute,
   practiceRoute,
+  shortsRoute,
 ]);
 
 export const router = createRouter({

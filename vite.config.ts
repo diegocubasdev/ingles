@@ -78,6 +78,26 @@ export default defineConfig({
               cacheName: "firebase-auth-network-only",
             },
           },
+          {
+            urlPattern: ({ request }) =>
+              ["script", "style", "worker"].includes(request.destination),
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "app-shell-assets",
+            },
+          },
+          {
+            urlPattern: ({ request }) =>
+              ["image", "font"].includes(request.destination),
+            handler: "CacheFirst",
+            options: {
+              cacheName: "static-media",
+              expiration: {
+                maxEntries: 80,
+                maxAgeSeconds: 60 * 60 * 24 * 30,
+              },
+            },
+          },
         ],
       },
     }),

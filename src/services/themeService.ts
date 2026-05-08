@@ -8,7 +8,7 @@ export function getInitialTheme(): ThemeMode {
     return storedTheme
   }
 
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  return 'dark'
 }
 
 export function applyTheme(theme: ThemeMode) {
