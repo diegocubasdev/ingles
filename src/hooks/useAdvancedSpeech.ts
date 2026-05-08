@@ -113,10 +113,13 @@ export function useAdvancedSpeech() {
       };
 
       recognition.onresult = (event) => {
-        const spoken = Array.from(event.results)
-          .map((result) => result[0]?.transcript ?? "")
-          .join(" ")
-          .trim();
+        const transcripts: string[] = [];
+
+        for (let index = 0; index < event.results.length; index += 1) {
+          transcripts.push(event.results[index][0]?.transcript ?? "");
+        }
+
+        const spoken = transcripts.join(" ").trim();
         finalTranscript = spoken;
         setTranscript(spoken);
       };
@@ -125,7 +128,7 @@ export function useAdvancedSpeech() {
         if (timeoutId) window.clearTimeout(timeoutId);
         setState("idle");
         setError("Nao consegui entender sua fala.");
-        reject(new Error("Speech recognition failed"));
+        resolve(finalTranscript.trim());
       };
 
       recognition.onend = () => {

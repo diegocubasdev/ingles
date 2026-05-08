@@ -9,7 +9,7 @@ import { normalizeAnswer } from "../services/textUtils";
 interface ShortVideo {
   id: string;
   title: string;
-  taskInstruction: string;
+  caption: string;
   keywords: string[];
 }
 
@@ -22,71 +22,71 @@ const shortsPool: ShortVideo[] = [
   {
     id: "Mc6pS-5ju5s",
     title: "React interview challenge",
-    taskInstruction:
-      "Assista e grave um audio dizendo qual conceito de React foi mencionado.",
+    caption:
+      "The speaker is talking about a React concept you may hear in technical interviews.",
     keywords: ["react", "state", "effect", "component"],
   },
   {
     id: "yhUDK_tLdDA",
     title: "JavaScript interview question",
-    taskInstruction:
-      "Assista e explique em ingles qual pergunta de JavaScript apareceu.",
+    caption:
+      "This short presents a common JavaScript interview-style question.",
     keywords: ["javascript", "string", "array", "function"],
   },
   {
     id: "w3dUOEqd55c",
     title: "HTML CSS JS mini project",
-    taskInstruction:
-      "Assista e resuma em ingles quais tecnologias foram usadas.",
+    caption:
+      "The video shows a small UI project built with HTML, CSS, and JavaScript.",
     keywords: ["html", "css", "javascript", "ui"],
   },
   {
     id: "MNUoe5ZgvT0",
     title: "Navigation animation",
-    taskInstruction:
-      "Assista e diga em ingles que tipo de interface foi criada.",
+    caption:
+      "The focus here is a navigation animation created for a web interface.",
     keywords: ["navigation", "animation", "css", "javascript"],
   },
   {
     id: "8aGhZQkoFbQ",
     title: "JavaScript event loop",
-    taskInstruction:
-      "Assista e diga em ingles qual mecanismo do JavaScript foi explicado.",
+    caption:
+      "This short explains the JavaScript event loop and asynchronous behavior.",
     keywords: ["javascript", "event", "loop", "async"],
   },
   {
     id: "w7ejDZ8SWv8",
     title: "React crash course",
-    taskInstruction:
-      "Assista e grave um resumo citando pelo menos dois termos de React.",
+    caption:
+      "The video introduces React basics such as components, props, and state.",
     keywords: ["react", "component", "props", "state"],
   },
   {
     id: "hdI2bqOjy3c",
     title: "JavaScript fundamentals",
-    taskInstruction:
-      "Assista e explique em ingles qual fundamento foi apresentado.",
+    caption:
+      "This lesson covers JavaScript fundamentals used in everyday frontend work.",
     keywords: ["javascript", "dom", "function", "event"],
   },
   {
     id: "fBNz5xF-Kx4",
     title: "Node.js crash course",
-    taskInstruction:
-      "Assista e diga em ingles como Node aparece no fluxo de backend.",
+    caption:
+      "The speaker is introducing Node.js as a runtime for backend development.",
     keywords: ["node", "server", "api", "request"],
   },
   {
     id: "Oe421EPjeBE",
     title: "Node and Express API",
-    taskInstruction:
-      "Assista e grave um resumo sobre a API ou rota mencionada.",
+    caption:
+      "This video is about building API routes with Node.js and Express.",
     keywords: ["node", "express", "api", "route"],
   },
   {
     id: "1WmNXEVia8I",
     title: "TypeScript essentials",
-    taskInstruction:
-      "Assista e diga em ingles qual recurso de TypeScript foi citado.",
+    caption:
+      "The video highlights TypeScript features such as types and interfaces.",
     keywords: ["typescript", "type", "interface", "function"],
   },
 ];
@@ -234,12 +234,12 @@ function ShortCard({
       ) : null}
 
       <div className="pointer-events-none absolute inset-x-0 top-4 z-10 px-4">
-        <div className="rounded-lg bg-black/60 p-4 shadow-2xl backdrop-blur-md">
+        <div className="mx-auto max-w-xl rounded-lg bg-black/70 p-4 text-center shadow-2xl backdrop-blur-md">
           <p className="font-mono text-xs uppercase tracking-wide text-cyan-200">
-            Tarefa do video
+            English caption
           </p>
-          <p className="mt-2 text-lg font-semibold leading-snug">
-            {video.taskInstruction}
+          <p className="mt-2 text-lg font-semibold leading-snug text-white">
+            {video.caption}
           </p>
         </div>
       </div>
@@ -254,11 +254,11 @@ function ShortCard({
         </p>
       </div>
 
-      <div className="pointer-events-auto absolute inset-x-4 bottom-6 z-20 mx-auto max-w-sm rounded-lg border border-white/10 bg-white/10 p-4 backdrop-blur-md">
+      <div className="pointer-events-auto absolute inset-x-4 bottom-6 z-20 mx-auto max-w-sm rounded-lg border border-white/10 bg-black/50 p-4 backdrop-blur-md">
         <div className="flex items-center justify-between gap-3">
           <span className="inline-flex items-center gap-2 font-mono text-sm text-slate-200">
             <Timer className="size-4" />
-            {seconds}s
+            Speaking opcional: {seconds}s
           </span>
           {score !== null ? (
             <span className="inline-flex items-center gap-1 text-sm text-emerald-200">
@@ -275,10 +275,10 @@ function ShortCard({
             speech.isRecording ? { repeat: Infinity, duration: 0.8 } : undefined
           }
           onClick={() => void summarize()}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-4 text-base font-black text-slate-950 shadow-lg shadow-emerald-500/20"
+          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-300/40 bg-emerald-500/15 px-4 py-3 text-sm font-bold text-emerald-100 hover:bg-emerald-500 hover:text-slate-950"
         >
           <Mic className="size-5" />
-          {recording ? "Gravando resumo..." : "Gravar Resumo"}
+          {recording ? "Gravando treino..." : "Treinar speaking opcional"}
         </motion.button>
 
         {score !== null && score >= 2 ? (
@@ -342,6 +342,8 @@ function buildEmbedUrl(id: string) {
     rel: "0",
     loop: "1",
     playlist: id,
+    cc_lang_pref: "en",
+    cc_load_policy: "1",
     origin: window.location.origin,
   });
 

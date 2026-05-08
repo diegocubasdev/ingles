@@ -2,17 +2,27 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
+  Bell,
+  BellOff,
   Flame,
   Loader2,
   LogOut,
+  Plus,
   Radio,
   RotateCcw,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import { signOut } from "firebase/auth";
 import { useEffect, useState } from "react";
 import { useOfflineSync } from "../hooks/useOfflineSync";
 import { auth } from "../services/firebase";
+import {
+  disableDailyStudyNotifications,
+  enableDailyStudyNotifications,
+  getNotificationSettings,
+  updateDailyStudyNotificationTimes,
+} from "../services/notificationService";
 import { generateIntensivePlan } from "../services/taskGenerator";
 import { getCurrentStudyPlan } from "../services/studyPlanService";
 import {
@@ -153,6 +163,7 @@ export function DashboardPage() {
           </div>
 
           <AccountCard user={user} onAccountChanged={loadDashboard} />
+          <NotificationCard />
         </aside>
 
         <div className="space-y-4">
@@ -314,6 +325,148 @@ function ActivePlan({
           style={{ width: `${progress}%` }}
         />
       </div>
+    </div>
+  );
+}
+
+function NotificationCard() {
+  const [settings, setSettings] = useState(getNotificationSettings);
+  const [draftTime, setDraftTime] = useState("09:00");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function enable() {
+    setBusy(true);
+    setError(null);
+
+    try {
+      await enableDailyStudyNotifications();
+      setSettings(getNotificationSettings());
+    } catch (caughtError) {
+      setError(errorMessage(caughtError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function disable() {
+    disableDailyStudyNotifications();
+    setSettings(getNotificationSettings());
+    setError(null);
+  }
+
+  function addTime() {
+    const times = updateDailyStudyNotificationTimes([
+      ...settings.times,
+      draftTime,
+    ]);
+    setSettings({ ...getNotificationSettings(), times });
+  }
+
+  function removeTime(time: string) {
+    const times = updateDailyStudyNotificationTimes(
+      settings.times.filter((currentTime) => currentTime !== time),
+    );
+    setSettings({ ...getNotificationSettings(), times });
+  }
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/10 p-5 backdrop-blur-md">
+      <div className="flex items-center gap-3">
+        {settings.enabled ? (
+          <Bell className="size-5 text-emerald-300" aria-hidden="true" />
+        ) : (
+          <BellOff className="size-5 text-slate-400" aria-hidden="true" />
+        )}
+        <div>
+          <p className="font-mono text-xs uppercase tracking-wide text-cyan-200">
+            Push PWA
+          </p>
+          <h2 className="font-semibold text-white">Lembretes de estudo</h2>
+        </div>
+      </div>
+
+      <p className="mt-3 text-sm leading-6 text-slate-300">
+        Receba lembretes locais nos horarios configurados.
+      </p>
+
+      <div className="mt-4 space-y-2">
+        {settings.times.map((time) => (
+          <div
+            key={time}
+            className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-slate-950/50 px-3 py-2"
+          >
+            <span className="font-mono text-sm font-semibold text-slate-100">
+              {time}
+            </span>
+            <button
+              type="button"
+              onClick={() => removeTime(time)}
+              className="grid size-8 place-items-center rounded-md text-slate-400 hover:bg-red-400/10 hover:text-red-200"
+              aria-label={`Remover lembrete das ${time}`}
+              title="Remover horario"
+            >
+              <Trash2 className="size-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 flex gap-2">
+        <input
+          type="time"
+          value={draftTime}
+          onChange={(event) => setDraftTime(event.target.value)}
+          className="min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-950/70 px-3 py-3 text-sm font-semibold text-white outline-none focus:border-cyan-300"
+        />
+        <button
+          type="button"
+          onClick={addTime}
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 px-3 py-3 text-sm font-semibold text-slate-100 hover:border-cyan-200"
+          aria-label="Adicionar horario"
+          title="Adicionar horario"
+        >
+          <Plus className="size-4" />
+        </button>
+      </div>
+
+      {settings.enabled ? (
+        <button
+          type="button"
+          onClick={disable}
+          className="mt-4 w-full rounded-lg border border-white/10 px-4 py-3 text-sm font-semibold text-slate-100 hover:border-cyan-200"
+        >
+          Desativar notificacoes
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => void enable()}
+          disabled={
+            busy ||
+            settings.permission === "denied" ||
+            settings.permission === "unsupported"
+          }
+          className="mt-4 w-full rounded-lg bg-cyan-300 px-4 py-3 text-sm font-bold text-slate-950 disabled:opacity-60"
+        >
+          {busy ? "Solicitando permissao..." : "Ativar notificacoes"}
+        </button>
+      )}
+
+      {settings.permission === "denied" ? (
+        <p className="mt-3 text-xs leading-5 text-red-200">
+          Permissao bloqueada no navegador. Libere notificacoes nas
+          configuracoes do site/PWA.
+        </p>
+      ) : null}
+      {settings.permission === "unsupported" ? (
+        <p className="mt-3 text-xs leading-5 text-amber-200">
+          Este navegador nao suporta notificacoes Web Push.
+        </p>
+      ) : null}
+      {error ? (
+        <p className="mt-3 text-xs leading-5 text-red-200">{error}</p>
+      ) : null}
     </div>
   );
 }

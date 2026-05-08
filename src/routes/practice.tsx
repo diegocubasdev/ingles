@@ -228,8 +228,12 @@ function ShadowingTask({ task, onSuccess }: TaskProps) {
   const [attempt, setAttempt] = useState<LastAttempt | null>(null);
 
   async function record() {
-    const transcript = await speech.startRecording();
-    validateSpoken(task, transcript, revealed, setResult, setAttempt, feedback, onSuccess);
+    try {
+      const transcript = await speech.startRecording();
+      validateSpoken(task, transcript, revealed, setResult, setAttempt, feedback, onSuccess);
+    } catch {
+      markSpeechNotHeard(task, setResult, setAttempt, feedback);
+    }
   }
 
   return (
@@ -321,9 +325,14 @@ function RapidFireTask({ task, onSuccess }: TaskProps) {
   async function start() {
     setSeconds(5);
     setRunning(true);
-    const transcript = await speech.startRecording(5);
-    setRunning(false);
-    validateSpoken(task, transcript, revealed, setResult, setAttempt, feedback, onSuccess);
+    try {
+      const transcript = await speech.startRecording(5);
+      setRunning(false);
+      validateSpoken(task, transcript, revealed, setResult, setAttempt, feedback, onSuccess);
+    } catch {
+      setRunning(false);
+      markSpeechNotHeard(task, setResult, setAttempt, feedback);
+    }
   }
 
   return (
@@ -374,8 +383,17 @@ function MockInterviewTask({ task, onSuccess }: TaskProps) {
   const currentQuestion = questions[answers.length];
 
   async function answerQuestion() {
-    const transcript = await speech.startRecording(20);
-    setAnswers((items) => [...items, transcript]);
+    try {
+      const transcript = await speech.startRecording(20);
+      setAnswers((items) => [
+        ...items,
+        transcript || "Nao consegui capturar sua resposta.",
+      ]);
+    } catch {
+      setAnswers((items) => [...items, "Nao consegui capturar sua resposta."]);
+      setResult("wrong");
+      feedback(false);
+    }
   }
 
   async function finish() {
@@ -520,7 +538,9 @@ function TaskFrame({
       ) : null}
 
       <div className="mt-6">{children}</div>
-      {attempt && feedback !== "correct" ? <AttemptDiff attempt={attempt} /> : null}
+      {attempt && feedback !== "correct" ? (
+        <AttemptDiff attempt={attempt} feedback={feedback} />
+      ) : null}
       <FeedbackMessage feedback={feedback} />
     </div>
   );
@@ -590,11 +610,17 @@ function ActionButton({
   );
 }
 
-function AttemptDiff({ attempt }: { attempt: LastAttempt }) {
+function AttemptDiff({
+  attempt,
+  feedback,
+}: {
+  attempt: LastAttempt;
+  feedback: Feedback;
+}) {
   return (
-    <div className="mt-5 rounded-lg border border-red-300/20 bg-red-400/10 p-4">
-      <p className="font-mono text-xs uppercase tracking-wide text-red-200">
-        Compare e ajuste
+    <div className="mt-5 rounded-lg border border-amber-300/20 bg-amber-400/10 p-4">
+      <p className="font-mono text-xs uppercase tracking-wide text-amber-200">
+        {feedback === "almost" ? "Quase certo" : "Compare e ajuste"}
       </p>
       <div className="mt-3 grid gap-3">
         <div>
@@ -692,12 +718,31 @@ function validateSpoken(
   feedback: (correct: boolean) => void,
   onSuccess: (task: Task, transcript: string, score: number, xpAward: number) => void,
 ) {
+  if (!transcript.trim()) {
+    markSpeechNotHeard(task, setResult, setAttempt, feedback);
+    return;
+  }
+
   const score = scoreAnswer(transcript, task);
   const correct = score >= 0.82 || revealed;
   setAttempt({ expected: task.expectedAnswer, heard: transcript });
   setResult(correct ? "correct" : score >= 0.68 ? "almost" : "wrong");
   feedback(correct);
   if (correct) onSuccess(task, transcript, score, revealed ? 0 : 10);
+}
+
+function markSpeechNotHeard(
+  task: Task,
+  setResult: (feedback: Feedback) => void,
+  setAttempt: (attempt: LastAttempt | null) => void,
+  feedback: (correct: boolean) => void,
+) {
+  setAttempt({
+    expected: task.expectedAnswer,
+    heard: "Nao consegui ouvir sua resposta. Verifique o microfone e tente de novo.",
+  });
+  setResult("wrong");
+  feedback(false);
 }
 
 function scoreAnswer(input: string, task: Task) {
