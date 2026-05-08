@@ -1,7 +1,6 @@
 import {
   GoogleAuthProvider,
   browserLocalPersistence,
-  getRedirectResult,
   linkWithPopup,
   onAuthStateChanged,
   setPersistence,
