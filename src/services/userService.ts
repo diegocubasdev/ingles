@@ -1,10 +1,12 @@
 import {
   GoogleAuthProvider,
   browserLocalPersistence,
+  getRedirectResult,
   linkWithPopup,
   onAuthStateChanged,
   setPersistence,
   signInWithPopup,
+  signInWithRedirect,
 } from "firebase/auth";
 import {
   doc,
@@ -87,13 +89,26 @@ export async function signInWithGoogle(): Promise<User> {
   provider.setCustomParameters({ prompt: "select_account" });
 
   try {
+    // Try popup first
     if (auth.currentUser?.isAnonymous) {
       await linkWithPopup(auth.currentUser, provider);
     } else {
       await signInWithPopup(auth, provider);
     }
-  } catch {
-    await signInWithPopup(auth, provider);
+  } catch (popupError) {
+    console.warn("Popup failed, trying redirect:", popupError);
+    try {
+      // Fallback to redirect for PWA/mobile
+      await signInWithRedirect(auth, provider);
+      // For redirect, we need to handle the result separately
+      // But since this function returns immediately, we'll handle it in the component
+      throw new Error(
+        "Redirect initiated - please wait for redirect completion",
+      );
+    } catch (redirectError) {
+      console.error("Both popup and redirect failed:", redirectError);
+      throw redirectError;
+    }
   }
 
   return getOrCreateUser();
