@@ -1,61 +1,48 @@
 import { BookOpenCheck, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { getRedirectResult } from "firebase/auth";
+import { getRedirectResult, onAuthStateChanged } from "firebase/auth";
 import { auth } from "../services/firebase";
 import { signInWithGoogle } from "../services/userService";
 
 export function Login() {
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check for redirect result on component mount
-    const checkRedirectResult = async () => {
-      try {
-        console.log("Checking for redirect result...");
-        const result = await getRedirectResult(auth);
-        if (result?.user) {
-          console.log("Redirect result found, user:", result.user.email);
-          // Give Firebase a moment to update state
-          await new Promise((resolve) => setTimeout(resolve, 500));
-          navigate({ to: "/dashboard" });
-        }
-      } catch (err) {
-        console.error("Redirect result error:", err);
-        const errorMessage =
-          err instanceof Error ? err.message : "Erro no redirect";
-        setError(`Erro ao completar login: ${errorMessage}`);
-      }
-    };
+    getRedirectResult(auth).catch((err) => {
+      console.error("Redirect result error:", err);
+      const errorMessage =
+        err instanceof Error ? err.message : "Erro no redirect";
+      setError(`Erro ao completar login: ${errorMessage}`);
+    });
 
-    checkRedirectResult();
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        void navigate({ to: "/dashboard" });
+      } else {
+        setLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
   }, [navigate]);
 
   async function handleSignIn() {
     setLoading(true);
     setError(null);
     try {
-      console.log("Starting Google sign-in...");
-      const user = await signInWithGoogle();
-      console.log("Sign-in successful, user:", user);
-
-      // Give Firebase a moment to update auth state before navigating
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      console.log("Navigating to dashboard...");
-      navigate({ to: "/dashboard" });
+      await signInWithGoogle();
+      // O onAuthStateChanged vai detectar a mudança e redirecionar
     } catch (err) {
       console.error("Login error:", err);
+      setLoading(false);
       const errorMessage =
         err instanceof Error ? err.message : "Erro desconhecido";
-      // Don't show error if it's the redirect message
       if (!errorMessage.includes("Redirect initiated")) {
         setError(`Erro ao fazer login: ${errorMessage}`);
       }
-    } finally {
-      setLoading(false);
     }
   }
 
