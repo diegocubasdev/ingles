@@ -1,4 +1,4 @@
-import { BookOpenCheck, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { getRedirectResult, onAuthStateChanged } from "firebase/auth";
@@ -11,22 +11,37 @@ export function Login() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    let mounted = true;
+
     getRedirectResult(auth).catch((err) => {
       console.error("Redirect result error:", err);
-      const errorMessage =
-        err instanceof Error ? err.message : "Erro no redirect";
-      setError(`Erro ao completar login: ${errorMessage}`);
+      if (mounted) {
+        const errorMessage =
+          err instanceof Error ? err.message : "Erro no redirect";
+        setError(`Erro ao completar login: ${errorMessage}`);
+        setLoading(false);
+      }
     });
 
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
+      if (!mounted) return;
+
+      // Precisamos garantir a mesma validação que existe no seu router.tsx
+      const hasGoogleProvider = user?.providerData.some(
+        (p) => p.providerId === "google.com",
+      );
+
+      if (user && hasGoogleProvider) {
         void navigate({ to: "/dashboard" });
       } else {
         setLoading(false);
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
   }, [navigate]);
 
   async function handleSignIn() {
@@ -50,7 +65,11 @@ export function Login() {
     <div className="flex min-h-[calc(100vh-80px)] items-center justify-center px-4">
       <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-8 shadow-lg dark:border-slate-800 dark:bg-slate-900">
         <div className="text-center">
-          <BookOpenCheck className="mx-auto size-12 text-slate-950 dark:text-white" />
+          <img
+            src="/pwa-192x192.png"
+            alt="Logo do PWA"
+            className="mx-auto size-20 rounded-2xl shadow-sm"
+          />
           <h1 className="mt-4 text-2xl font-bold text-slate-950 dark:text-white">
             Intensive English
           </h1>
