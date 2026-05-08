@@ -29,7 +29,10 @@ export function Login() {
       try {
         await authPersistenceReady;
 
-        const redirectResult = await getRedirectResult(auth);
+        const redirectResult = await getRedirectResult(auth).catch((err) => {
+          console.warn("Redirect result ignored:", err);
+          return null;
+        });
 
         if (!mounted) return;
 
@@ -62,14 +65,14 @@ export function Login() {
           setLoading(false);
         });
       } catch (err) {
-        console.error("Redirect result error:", err);
+        console.error("Auth init error:", err);
 
         if (!mounted) return;
 
         const errorMessage =
           err instanceof Error ? err.message : "Erro no redirect";
 
-        setError(`Erro ao completar login: ${errorMessage}`);
+        setError(`Erro ao iniciar autenticacao: ${errorMessage}`);
         setLoading(false);
       }
     }
@@ -112,7 +115,7 @@ export function Login() {
         errorCode === "auth/cancelled-popup-request"
       ) {
         setError(
-          "O navegador bloqueou o popup. Tente novamente ou abra pelo Safari.",
+          "O iOS bloqueou a janela de login. Toque em Entrar novamente; se persistir, abra o app pelo Safari uma vez e depois volte ao PWA.",
         );
         setLoading(false);
         return;

@@ -1,8 +1,9 @@
 import { initializeApp } from "firebase/app";
 import {
   browserLocalPersistence,
-  getAuth,
-  setPersistence,
+  browserPopupRedirectResolver,
+  indexedDBLocalPersistence,
+  initializeAuth,
 } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
@@ -17,12 +18,10 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-export const auth = getAuth(app);
+export const auth = initializeAuth(app, {
+  persistence: [indexedDBLocalPersistence, browserLocalPersistence],
+  popupRedirectResolver: browserPopupRedirectResolver,
+});
 export const db = getFirestore(app);
 
-export const authPersistenceReady = setPersistence(
-  auth,
-  browserLocalPersistence,
-).catch((error: unknown) => {
-  console.error("Error setting auth persistence:", error);
-});
+export const authPersistenceReady = Promise.resolve();

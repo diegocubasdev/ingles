@@ -54,6 +54,10 @@ function isPwaStandalone() {
   return Boolean(isStandaloneDisplay || isIosStandalone);
 }
 
+function isIosDevice() {
+  return /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+}
+
 function shouldFallbackToRedirect(error: unknown) {
   const code =
     typeof error === "object" &&
@@ -109,7 +113,13 @@ export async function getOrCreateUser(): Promise<User> {
     snapshot = await getDoc(ref);
   } catch {
     if (localUser) return localUser;
-    throw new Error("Nao foi possivel carregar usuario offline.");
+    const user: User = {
+      ...defaultUser(firebaseUser.uid),
+      name: displayName ?? "Student",
+    };
+    await cacheUser(user);
+    await enqueueSync({ uid: user.uid, action: "updateUser", payload: user });
+    return user;
   }
 
   if (snapshot.exists()) {
@@ -143,11 +153,15 @@ export async function getOrCreateUser(): Promise<User> {
     name: displayName ?? "Student",
   };
 
-  await setDoc(ref, {
-    ...user,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
+  try {
+    await setDoc(ref, {
+      ...user,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch {
+    await enqueueSync({ uid: user.uid, action: "updateUser", payload: user });
+  }
 
   return cacheUser(user);
 }
@@ -156,21 +170,16 @@ export async function signInWithGoogle(): Promise<User | void> {
   await authPersistenceReady;
 
   const provider = createGoogleProvider();
-  const useRedirectDirectly = isPwaStandalone();
+  const avoidRedirect = isPwaStandalone() && isIosDevice();
 
   if (auth.currentUser?.isAnonymous) {
-    if (useRedirectDirectly) {
-      await linkWithRedirect(auth.currentUser, provider);
-      return;
-    }
-
     try {
       await linkWithPopup(auth.currentUser, provider);
       return getOrCreateUser();
     } catch (error) {
       console.warn("Popup link failed:", error);
 
-      if (shouldFallbackToRedirect(error)) {
+      if (shouldFallbackToRedirect(error) && !avoidRedirect) {
         await linkWithRedirect(auth.currentUser, provider);
         return;
       }
@@ -179,18 +188,13 @@ export async function signInWithGoogle(): Promise<User | void> {
     }
   }
 
-  if (useRedirectDirectly) {
-    await signInWithRedirect(auth, provider);
-    return;
-  }
-
   try {
     await signInWithPopup(auth, provider);
     return getOrCreateUser();
   } catch (error) {
     console.warn("Popup sign-in failed:", error);
 
-    if (shouldFallbackToRedirect(error)) {
+    if (shouldFallbackToRedirect(error) && !avoidRedirect) {
       await signInWithRedirect(auth, provider);
       return;
     }

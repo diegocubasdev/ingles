@@ -95,6 +95,7 @@ const batchSize = 8;
 export function ShortsPage() {
   const firstBatch = useMemo(() => makeBatch(batchSize), []);
   const [feed, setFeed] = useState(firstBatch);
+  const [soundUnlocked, setSoundUnlocked] = useState(false);
 
   const appendBatch = useCallback(() => {
     setFeed((items) => [...items, ...makeBatch(batchSize)]);
@@ -124,18 +125,31 @@ export function ShortsPage() {
       </Link>
 
       {feed.map((video, index) => (
-        <ShortCard key={`${video.id}-${index}`} video={video} />
+        <ShortCard
+          key={`${video.id}-${index}`}
+          video={video}
+          soundUnlocked={soundUnlocked}
+          onUnlockSound={() => setSoundUnlocked(true)}
+        />
       ))}
     </section>
   );
 }
 
-function ShortCard({ video }: { video: ShortVideo }) {
+function ShortCard({
+  video,
+  soundUnlocked,
+  onUnlockSound,
+}: {
+  video: ShortVideo;
+  soundUnlocked: boolean;
+  onUnlockSound: () => void;
+}) {
   const speech = useAdvancedSpeech();
   const [seconds, setSeconds] = useState(15);
   const [recording, setRecording] = useState(false);
   const [score, setScore] = useState<number | null>(null);
-  const [playing, setPlaying] = useState(false);
+  const [playing, setPlaying] = useState(soundUnlocked);
 
   useEffect(() => {
     if (!recording || seconds <= 0) return;
@@ -160,7 +174,7 @@ function ShortCard({ video }: { video: ShortVideo }) {
     <article className="relative grid h-[calc(100svh-4rem-6rem)] snap-start place-items-center overflow-hidden bg-slate-950 md:h-[calc(100svh-73px)]">
       <iframe
         title={video.title}
-        src={buildEmbedUrl(video.id, playing)}
+        src={buildEmbedUrl(video.id)}
         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
         allowFullScreen
         className="h-full w-full"
@@ -169,7 +183,10 @@ function ShortCard({ video }: { video: ShortVideo }) {
       {!playing ? (
         <button
           type="button"
-          onClick={() => setPlaying(true)}
+          onClick={() => {
+            setPlaying(true);
+            onUnlockSound();
+          }}
           className="absolute inset-0 z-10 grid place-items-center bg-slate-950/35 text-white backdrop-blur-[1px]"
           aria-label={`Tocar ${video.title}`}
         >
@@ -230,8 +247,9 @@ function ShortCard({ video }: { video: ShortVideo }) {
   );
 }
 
-function buildEmbedUrl(id: string, playing: boolean) {
+function buildEmbedUrl(id: string) {
   const params = new URLSearchParams({
+    autoplay: "1",
     controls: "1",
     modestbranding: "1",
     playsinline: "1",
@@ -239,11 +257,6 @@ function buildEmbedUrl(id: string, playing: boolean) {
     loop: "1",
     playlist: id,
   });
-
-  if (playing) {
-    params.set("autoplay", "1");
-    params.set("mute", "1");
-  }
 
   return `https://www.youtube.com/embed/${id}?${params.toString()}`;
 }
