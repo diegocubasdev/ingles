@@ -27,7 +27,7 @@ export default defineConfig({
          * No iOS/PWA isso pode carregar a rota protegida antes do Firebase
          * restaurar a sessão.
          */
-        start_url: "/dashboard",
+        start_url: "/",
         scope: "/",
 
         icons: [
