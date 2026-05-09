@@ -170,19 +170,6 @@ export function PracticePage() {
           <p className="mt-3 text-sm text-slate-300">
             Drill {currentIndex + 1} de {tasks.length}
           </p>
-          <button
-            type="button"
-            onClick={() =>
-              showPracticeHelp(
-                "Progresso do dia",
-                "Mostra em qual tarefa voce esta hoje. A pratica so avanca quando voce decide continuar.",
-              )
-            }
-            className="mt-4 inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 hover:border-cyan-200"
-          >
-            <Info className="size-4" />
-            Como funciona
-          </button>
         </aside>
 
         <AnimatePresence mode="wait">
@@ -313,27 +300,35 @@ function ShadowingTask({ task, onSuccess }: TaskProps) {
       }
       onRetry={result !== "idle" ? retry : undefined}
     >
-      <ListenButton label="Ouvir frase em ingles" onClick={() => void speech.speak(task.content, 1)} />
-      <MicButton
-        recording={speech.isRecording}
-        onClick={() => {
-          if (speech.isRecording) speech.stopRecording();
-          else void record();
-        }}
-      />
-      <Transcript text={speech.transcript} />
-      <WordBlockBuilder
-        key={`shadowing-blocks-${task.id}`}
-        phrase={task.expectedAnswer}
-        onChange={setManualAnswer}
-      />
-      <ManualSpeechFallback
-        value={manualAnswer}
-        onChange={setManualAnswer}
-        onValidate={validateManualAnswer}
-        speechError={speech.error}
-        canRecognize={speech.canRecognize}
-      />
+      <PracticeSection label="1. Escute">
+        <ListenButton label="Ouvir frase em ingles" onClick={() => void speech.speak(task.content, 1)} />
+      </PracticeSection>
+      <PracticeSection label="2. Responda falando">
+        <MicButton
+          recording={speech.isRecording}
+          onClick={() => {
+            if (speech.isRecording) speech.stopRecording();
+            else void record();
+          }}
+        />
+        <Transcript text={speech.transcript} />
+      </PracticeSection>
+      <PracticeSection label="3. Monte a resposta esperada">
+        <WordBlockBuilder
+          key={`shadowing-blocks-${task.id}`}
+          phrase={task.expectedAnswer}
+          onChange={setManualAnswer}
+        />
+      </PracticeSection>
+      <PracticeSection label="4. Valide ou ajuste">
+        <ManualSpeechFallback
+          value={manualAnswer}
+          onChange={setManualAnswer}
+          onValidate={validateManualAnswer}
+          speechError={speech.error}
+          canRecognize={speech.canRecognize}
+        />
+      </PracticeSection>
     </TaskFrame>
   );
 }
@@ -390,31 +385,33 @@ function BlindDictationTask({ task, onSuccess }: TaskProps) {
       onRetry={result !== "idle" ? retry : undefined}
     >
       <GrammarFocusTag value={task.grammarFocus} />
-      <ListenButton label="Ouvir frase em ingles rapido" onClick={() => void speech.speak(task.content, 1.25)} />
-      <div className="mt-6 flex items-center gap-2">
-        <label className="flex items-center gap-2 text-base font-semibold text-slate-100">
-          <Keyboard className="size-5" />
-          Digite aqui o que voce ouviu
-        </label>
-        <HelpIcon
-          title="Resposta digitada"
-          message="Digite exatamente a frase em ingles que voce ouviu no audio."
+      <PracticeSection label="1. Escute">
+        <ListenButton label="Ouvir frase em ingles rapido" onClick={() => void speech.speak(task.content, 1.25)} />
+      </PracticeSection>
+      <PracticeSection label="2. Monte a resposta esperada">
+        <WordBlockBuilder
+          key={`dictation-blocks-${task.id}`}
+          phrase={task.expectedAnswer}
+          onChange={setAnswer}
         />
-      </div>
-      <input
-        value={answer}
-        onChange={(event) => setAnswer(event.target.value)}
-        placeholder="Ex: I deployed the hotfix."
-        className="mt-3 w-full rounded-lg border border-white/10 bg-slate-950/70 px-4 py-4 text-lg text-white outline-none focus:border-cyan-300"
-      />
-      <WordBlockBuilder
-        key={`dictation-blocks-${task.id}`}
-        phrase={task.expectedAnswer}
-        onChange={setAnswer}
-      />
-      <ActionButton disabled={!answer.trim()} onClick={validate}>
-        Validar resposta
-      </ActionButton>
+      </PracticeSection>
+      <PracticeSection label="3. Ajuste o texto">
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 text-base font-semibold text-slate-100">
+            <Keyboard className="size-5" />
+            Sua resposta
+          </label>
+        </div>
+        <input
+          value={answer}
+          onChange={(event) => setAnswer(event.target.value)}
+          placeholder="Ex: I deployed the hotfix."
+          className="mt-3 w-full rounded-lg border border-white/10 bg-slate-950/70 px-4 py-4 text-lg text-white outline-none focus:border-cyan-300"
+        />
+        <ActionButton disabled={!answer.trim()} onClick={validate}>
+          Validar resposta
+        </ActionButton>
+      </PracticeSection>
     </TaskFrame>
   );
 }
@@ -512,43 +509,47 @@ function RapidFireTask({ task, onSuccess }: TaskProps) {
       onRetry={result !== "idle" ? retry : undefined}
     >
       <GrammarFocusTag value={task.grammarFocus} />
-      <div className="rounded-lg border border-white/10 bg-slate-950/60 p-5">
-        <div className="flex items-center gap-2">
+      <PracticeSection label="1. Leia a ideia">
+        <div className="rounded-lg border border-white/10 bg-slate-950/60 p-5">
+          <div className="flex items-center gap-2">
           <p className="text-sm font-semibold uppercase tracking-wide text-slate-400">
             Frase em portugues
           </p>
-          <HelpIcon
-            title="Frase em portugues"
-            message="Esta e a ideia que voce precisa falar em ingles antes do tempo acabar."
+          </div>
+          <p className="mt-2 text-2xl font-semibold">{task.content}</p>
+        </div>
+      </PracticeSection>
+      <PracticeSection label="2. Responda em 5s">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <span className="grid size-16 place-items-center rounded-full border border-cyan-300 font-mono text-2xl text-cyan-200">
+            {seconds}
+          </span>
+          <MicButton
+            recording={speech.isRecording}
+            onClick={() => {
+              if (speech.isRecording) speech.stopRecording();
+              else void start();
+            }}
           />
         </div>
-        <p className="mt-2 text-2xl font-semibold">{task.content}</p>
-      </div>
-      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <span className="grid size-16 place-items-center rounded-full border border-cyan-300 font-mono text-2xl text-cyan-200">
-          {seconds}
-        </span>
-        <MicButton
-          recording={speech.isRecording}
-          onClick={() => {
-            if (speech.isRecording) speech.stopRecording();
-            else void start();
-          }}
+        <Transcript text={speech.transcript} />
+      </PracticeSection>
+      <PracticeSection label="3. Monte a resposta esperada">
+        <WordBlockBuilder
+          key={`rapid-blocks-${task.id}`}
+          phrase={task.expectedAnswer}
+          onChange={setManualAnswer}
         />
-      </div>
-      <Transcript text={speech.transcript} />
-      <WordBlockBuilder
-        key={`rapid-blocks-${task.id}`}
-        phrase={task.expectedAnswer}
-        onChange={setManualAnswer}
-      />
-      <ManualSpeechFallback
-        value={manualAnswer}
-        onChange={setManualAnswer}
-        onValidate={validateManualAnswer}
-        speechError={speech.error}
-        canRecognize={speech.canRecognize}
-      />
+      </PracticeSection>
+      <PracticeSection label="4. Valide ou ajuste">
+        <ManualSpeechFallback
+          value={manualAnswer}
+          onChange={setManualAnswer}
+          onValidate={validateManualAnswer}
+          speechError={speech.error}
+          canRecognize={speech.canRecognize}
+        />
+      </PracticeSection>
     </TaskFrame>
   );
 }
@@ -813,7 +814,7 @@ function TaskFrame({
         </div>
       ) : null}
 
-      <div>{children}</div>
+      <div className="space-y-5">{children}</div>
       {attempt && feedback !== "correct" ? (
         <AttemptDiff attempt={attempt} feedback={feedback} />
       ) : null}
@@ -826,6 +827,23 @@ function TaskFrame({
         />
       ) : null}
     </div>
+  );
+}
+
+function PracticeSection({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-lg border border-white/10 bg-slate-950/35 p-4">
+      <p className="font-mono text-xs font-semibold uppercase tracking-wide text-cyan-100">
+        {label}
+      </p>
+      <div className="mt-4">{children}</div>
+    </section>
   );
 }
 
@@ -1087,17 +1105,24 @@ function WordBlockBuilder({
   }
 
   return (
-    <div className="mt-5 rounded-lg border border-white/10 bg-slate-950/50 p-4">
-      <div className="flex items-center gap-2">
-        <p className="text-sm font-semibold text-slate-100">
-          Monte com blocos
+    <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/5 p-4">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-slate-100">
+            Resposta embaralhada em blocos
+          </p>
+          <p className="mt-1 text-sm text-slate-400">
+            Selecione as palavras na ordem certa. A frase vai preenchendo automaticamente.
+          </p>
+        </div>
+        <p className="font-mono text-xs uppercase tracking-wide text-cyan-200">
+          {selectedBlocks.length}/{options.length}
         </p>
-        <HelpIcon
-          title="Blocos de frase"
-          message="Use os blocos para montar a frase quando nao entender o audio. Isso nao conta como revelar resposta e nao zera o XP automaticamente."
-        />
       </div>
-      <div className="mt-3 min-h-14 rounded-lg border border-dashed border-cyan-300/30 bg-cyan-300/5 p-3">
+      <div className="mt-4 min-h-16 rounded-lg border border-dashed border-cyan-300/40 bg-slate-950/60 p-3">
+        <p className="mb-2 font-mono text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+          Sua frase
+        </p>
         {selectedBlocks.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {selectedBlocks.map((block) => (
@@ -1113,10 +1138,13 @@ function WordBlockBuilder({
           </div>
         ) : (
           <p className="text-sm text-slate-400">
-            Toque nos blocos abaixo para formar a frase.
+            Toque nos blocos abaixo para formar a resposta.
           </p>
         )}
       </div>
+      <p className="mt-4 font-mono text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        Blocos disponiveis
+      </p>
       <div className="mt-3 flex flex-wrap gap-2">
         {availableBlocks.map((block) => (
           <button
@@ -1133,7 +1161,7 @@ function WordBlockBuilder({
         <button
           type="button"
           onClick={() => updateSelected([])}
-          className="mt-3 text-sm font-semibold text-slate-400 hover:text-white"
+          className="mt-4 inline-flex rounded-lg border border-white/10 px-3 py-2 text-sm font-semibold text-slate-300 hover:border-cyan-200 hover:text-white"
         >
           Limpar blocos
         </button>
@@ -1231,27 +1259,10 @@ interface PracticeHelpToastMessage {
 }
 
 function HelpIcon({
-  title,
-  message,
+  title: _title,
+  message: _message,
 }: PracticeHelpToastMessage) {
-  return (
-    <button
-      type="button"
-      aria-label={`Ajuda: ${title}`}
-      onClick={() => showPracticeHelp(title, message)}
-      className="inline-grid size-8 shrink-0 place-items-center rounded-full border border-white/10 bg-white/10 text-slate-200 backdrop-blur hover:border-cyan-200 hover:text-cyan-100"
-    >
-      <Info className="size-4" />
-    </button>
-  );
-}
-
-function showPracticeHelp(title: string, message: string) {
-  window.dispatchEvent(
-    new CustomEvent<PracticeHelpToastMessage>(PRACTICE_HELP_EVENT, {
-      detail: { title, message },
-    }),
-  );
+  return null;
 }
 
 function PracticeHelpToast() {
